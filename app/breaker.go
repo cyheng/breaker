@@ -18,5 +18,22 @@ func New(f ...feature.Feature) *App {
 }
 
 func (a *App) Run() error {
+	for _, f := range a.features {
+		server, ok := f.(feature.Server)
+		if ok {
+			err := server.Start(a.ctx)
+			if err != nil {
+				return err
+			}
+		}
+		client, ok := f.(feature.Client)
+		if ok {
+			err := client.Connect()
+			if err != nil {
+				return err
+			}
+		}
+
+	}
 	return nil
 }

@@ -8,6 +8,9 @@
 6. 路由？
 7. 通过init函数注册factory
 8. 协议
+    * 消息类型,1byte
+    * 长度,int64
+    * 消息body
  
 
 

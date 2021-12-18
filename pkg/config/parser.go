@@ -25,6 +25,12 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
+		requiredFeatures := []feature.FeatureConfig{
+			&feature.LoggerConfig{},
+		}
+		for _, f := range requiredFeatures {
+			f.OnInit()
+		}
 		for _, item := range f.Sections() {
 			secName := item.Name()
 			config, e := feature.GetConfig(secName)
@@ -33,11 +39,11 @@ func init() {
 			}
 			item.MapTo(config)
 			config.OnInit()
-			feature, err := config.NewFeature()
+			f, err := config.NewFeature()
 			if err != nil {
 				continue
 			}
-			result = append(result, feature)
+			result = append(result, f)
 
 		}
 		return

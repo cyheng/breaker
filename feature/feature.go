@@ -1,10 +1,24 @@
 package feature
 
-import "errors"
+import (
+	"context"
+	"errors"
+)
 
 type Feature interface {
+	Name() string
 }
-
+type Server interface {
+	Feature
+	Addr() string
+	Start(ctx context.Context) error
+	Stop(ctx context.Context) error
+}
+type Client interface {
+	Feature
+	Connect() error
+	Stop(ctx context.Context) error
+}
 type FeatureConfig interface {
 	OnInit()
 	NewFeature() (Feature, error)
@@ -14,7 +28,6 @@ var configFactory = make(map[string]FeatureConfig)
 
 //Loader config to feature
 //type Loader func(config interface{}) (Feature, error)
-
 func RegisterConfig(featureName string, cfg FeatureConfig) {
 	configFactory[featureName] = cfg
 }

@@ -2,9 +2,10 @@ package feature
 
 import (
 	"errors"
-	"os"
-
 	log "github.com/sirupsen/logrus"
+	"gopkg.in/natefinch/lumberjack.v2"
+	"io"
+	"os"
 )
 
 type LoggerConfig struct {
@@ -23,7 +24,7 @@ type LoggerConfig struct {
 	// LogMaxDays specifies the maximum number of days to store log information
 	// before deletion. This is only used if LogWay == "file". By default, this
 	// value is 0.
-	LogMaxDays int64 `ini:"log_max_days" json:"log_max_days"`
+	LogMaxDays int `ini:"log_max_days" json:"log_max_days"`
 }
 
 func (l *LoggerConfig) OnInit() {
@@ -36,38 +37,31 @@ func (l *LoggerConfig) OnInit() {
 	if l.LogLevel == "" {
 		l.LogLevel = "info"
 	}
-	InitLog(l.LogWay, l.LogFile, l.LogLevel)
+	l.InitLog()
 }
 
 func (l *LoggerConfig) NewFeature() (Feature, error) {
 	return nil, errors.New("not support feature")
 }
 
-func InitLog(logWay string, logFile string, logLevel string) {
+func (l *LoggerConfig) InitLog() {
 	log.SetReportCaller(true)
 	log.SetFormatter(&log.TextFormatter{
 		TimestampFormat: "2006-01-02 15:03:04",
 	})
-	SetLogFile(logWay, logFile)
-	SetLogLevel(logLevel)
-}
-
-// logWay: such as file or console
-func SetLogFile(logWay string, logFile string) {
-	if logWay == "console" {
+	if l.LogWay == "console" {
 		log.SetOutput(os.Stdout)
 	} else {
-		file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			panic(err)
+		ljack := &lumberjack.Logger{
+			Filename:   l.LogFile,
+			MaxSize:    100, // megabytes
+			MaxBackups: 52,
+			MaxAge:     l.LogMaxDays, //days
+			Compress:   false,        // disabled by default
 		}
-		log.SetOutput(file)
+		io.MultiWriter(ljack, os.Stdout)
 	}
-}
-
-// value: error, warning, info, debug
-func SetLogLevel(logLevel string) {
-	_, err := log.ParseLevel(logLevel)
+	_, err := log.ParseLevel(l.LogLevel)
 	if err != nil {
 		panic(err)
 	}
