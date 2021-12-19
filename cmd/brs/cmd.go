@@ -4,6 +4,7 @@ import (
 	"breaker/app"
 	"breaker/pkg/config"
 	"fmt"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"os"
 	"os/signal"
@@ -35,9 +36,9 @@ var cmdRoot = &cobra.Command{
 			os.Exit(1)
 		}
 		breaker := app.New(features...)
-
-		if breaker.Run() != nil {
-			fmt.Println(err)
+		err = breaker.Run()
+		if err != nil {
+			log.Error(err)
 			os.Exit(1)
 		}
 		// 后台运行

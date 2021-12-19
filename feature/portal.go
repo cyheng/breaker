@@ -32,6 +32,12 @@ func (c *PortalConfig) NewFeature() (Feature, error) {
 		WorkingConn:  make(chan WorkingConn),
 	}
 	res.ServerAddr = c.ServerAddr
+	host, port, err := net.SplitHostPort(c.ServerAddr)
+	if err != nil {
+		return nil, err
+	}
+	res.ServerHost = host
+	res.ServerPort = port
 	return res, nil
 }
 
@@ -52,6 +58,9 @@ type Portal struct {
 	//客户端发过来的连接
 	WorkingConn chan WorkingConn
 	proxyLock   sync.Mutex
+	ServerHost  string
+	ServerPort  string
+	listener    net.Listener
 }
 
 func (p *Portal) Addr() string {
@@ -61,13 +70,18 @@ func (p *Portal) Name() string {
 	return FPortal
 }
 func (p *Portal) Stop(ctx context.Context) error {
+	if p.listener != nil {
+		p.listener.Close()
+	}
 	return nil
 }
 func (p *Portal) Start(ctx context.Context) error {
+
 	listener, err := net.Listen("tcp", p.Addr())
 	if err != nil {
 		return err
 	}
+	p.listener = listener
 	log.Printf("%v listening TCP on %v", p.Name(), p.Addr())
 	egg, ctx := errgroup.WithContext(ctx)
 	egg.Go(func() error {
@@ -92,7 +106,7 @@ func (p *Portal) Start(ctx context.Context) error {
 				return err
 			}
 			log.Infof("get client connection [%s]", conn.RemoteAddr().String())
-			go p.HandlerConn(conn)
+			go p.HandlerConn(conn, ctx)
 
 		}
 	})
@@ -117,42 +131,52 @@ func (p *Portal) Start(ctx context.Context) error {
 //4. control 发送NewProxy:remote_port和proxy_name
 //5. copy(worker,proxy conn)
 //6. control 发送NewProxyWorker
-func (p *Portal) HandlerConn(conn net.Conn) {
+func (p *Portal) HandlerConn(conn net.Conn, ctx context.Context) {
 	defer conn.Close()
-	msg, err := protocol.ReadMsg(conn)
-	if err != nil {
-		log.Info(err)
-		return
-	}
-	switch msg.Type() {
-	case protocol.TypeNewProxy:
-		pxy := msg.(*protocol.NewProxy)
-		p.onNewProxy(pxy)
-		break
-	case protocol.TypeNewWorkCtl:
-		workCtl := msg.(*protocol.WorkCtl)
-		p.onNewWorkCtl(conn, workCtl)
-		break
-	case protocol.TypeCloseProxy:
-		cmd := msg.(*protocol.CloseProxy)
-		p.onCloseProxy(cmd)
-	default:
-		log.Debug("unknown command")
-		return
+	for {
+		msg, err := protocol.ReadMsg(conn)
+		if err != nil {
+			log.Info(err)
+			return
+		}
+
+		switch msg.Type() {
+		case protocol.TypeNewProxy:
+			pxy := msg.(*protocol.NewProxy)
+			err = p.onNewProxy(conn, pxy, ctx)
+			break
+		case protocol.TypeNewWorkCtl:
+			workCtl := msg.(*protocol.WorkCtl)
+			err = p.onNewWorkCtl(conn, workCtl, ctx)
+			break
+		case protocol.TypeCloseProxy:
+			cmd := msg.(*protocol.CloseProxy)
+			err = p.onCloseProxy(conn, cmd, ctx)
+			break
+		default:
+			log.Debug("unknown command")
+			err = errors.New("unknown command")
+		}
+		if err != nil {
+			_ = protocol.WriteErrResponse(conn, err.Error())
+		} else {
+			_ = protocol.WriteSuccessResponse(conn)
+		}
 	}
 
 }
 
 //onNewProxy 收到TypeNewProxy指令之后，监听客户端发送过来的端口
-func (p *Portal) onNewProxy(cmd *protocol.NewProxy) error {
+func (p *Portal) onNewProxy(conn net.Conn, cmd *protocol.NewProxy, ctx context.Context) error {
 	pxyName := cmd.ProxyName
 
-	hostPort := net.JoinHostPort(p.ServerAddr, strconv.Itoa(cmd.RemotePort))
+	hostPort := net.JoinHostPort(p.ServerHost, strconv.Itoa(cmd.RemotePort))
 	listener, err := net.Listen("tcp", hostPort)
 	if err != nil {
 		log.Error("new Proxy error:", err)
 		return err
 	}
+	log.Infof("newProxy with address:[%s]", hostPort)
 	p.proxyLock.Lock()
 	defer p.proxyLock.Unlock()
 	if _, ok := p.RunningProxy[pxyName]; ok {
@@ -164,7 +188,8 @@ func (p *Portal) onNewProxy(cmd *protocol.NewProxy) error {
 
 }
 
-func (p *Portal) onNewWorkCtl(clientWorkConn net.Conn, cmd *protocol.WorkCtl) error {
+func (p *Portal) onNewWorkCtl(clientWorkConn net.Conn, cmd *protocol.WorkCtl, ctx context.Context) error {
+	log.Infof("get client working control:[%s],proxy:[%s]", clientWorkConn.RemoteAddr().String(), cmd.ProxyName)
 	proxy, ok := p.RunningProxy[cmd.ProxyName]
 	if !ok {
 		return errors.New("proxy:" + cmd.ProxyName + " is not ready")
@@ -191,22 +216,32 @@ func (p *Portal) onNewWorkCtl(clientWorkConn net.Conn, cmd *protocol.WorkCtl) er
 
 				return
 			}
-
-			go io.Copy(userconn, clientWorkConn)
-			go io.Copy(clientWorkConn, userconn)
+			group, _ := errgroup.WithContext(ctx)
+			group.Go(func() error {
+				_, err := io.Copy(userconn, clientWorkConn)
+				return err
+			})
+			group.Go(func() error {
+				_, err := io.Copy(clientWorkConn, userconn)
+				return err
+			})
 		}
 	}()
 	return nil
 }
 
-func (p *Portal) onCloseProxy(cmd *protocol.CloseProxy) error {
+func (p *Portal) onCloseProxy(conn net.Conn, cmd *protocol.CloseProxy, ctx context.Context) error {
+	log.Infof("close proxy:%s by client connection [%s]", cmd.ProxyName, conn.RemoteAddr().String())
 	proxy, ok := p.RunningProxy[cmd.ProxyName]
 	if !ok {
 		return errors.New("proxy:" + cmd.ProxyName + " is not ready")
 	}
 	p.proxyLock.Lock()
 	defer p.proxyLock.Unlock()
-	proxy.Close()
+	err := proxy.Close()
+	if err != nil {
+		return err
+	}
 	delete(p.RunningProxy, cmd.ProxyName)
 	return nil
 }

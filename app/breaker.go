@@ -23,6 +23,7 @@ func (a *App) Run() error {
 		if ok {
 			err := server.Start(a.ctx)
 			if err != nil {
+				_ = server.Stop(a.ctx)
 				return err
 			}
 		}
@@ -30,6 +31,7 @@ func (a *App) Run() error {
 		if ok {
 			err := client.Connect()
 			if err != nil {
+				_ = client.Stop(a.ctx)
 				return err
 			}
 		}

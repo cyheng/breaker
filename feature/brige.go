@@ -3,6 +3,7 @@ package feature
 import (
 	"breaker/pkg/protocol"
 	"context"
+	"errors"
 	log "github.com/sirupsen/logrus"
 	"io"
 	"net"
@@ -51,10 +52,21 @@ type Bridge struct {
 	LocalPort  int
 	RemotePort int
 	ProxyName  string
+	portal     net.Conn
 }
 
 func (b *Bridge) Stop(ctx context.Context) error {
-	return nil
+	if b.portal != nil {
+		err := protocol.WriteMsg(b.portal, &protocol.CloseProxy{
+			ProxyName: b.ProxyName,
+		})
+		if err != nil {
+			log.Errorf("send CloseProxy error:[%s]", err.Error())
+		}
+	}
+	err := b.portal.Close()
+	b.portal = nil
+	return err
 }
 
 func (b *Bridge) Name() string {
@@ -62,12 +74,16 @@ func (b *Bridge) Name() string {
 }
 
 func (b *Bridge) Connect() error {
+	if b.portal != nil {
+		return errors.New("already connect to portal:" + b.portal.RemoteAddr().String())
+	}
 	log.Info("dial tcp:", b.ServerAddr)
-
 	portal, err := net.Dial("tcp", b.ServerAddr)
+
 	if err != nil {
 		return err
 	}
+	b.portal = portal
 	newProxy := &protocol.NewProxy{
 		RemotePort: b.RemotePort,
 		ProxyName:  b.ProxyName,
@@ -75,21 +91,40 @@ func (b *Bridge) Connect() error {
 	log.Info("log message:", newProxy)
 	err = protocol.WriteMsg(portal, newProxy)
 	if err != nil {
+		log.Errorf("send new proxy error:[%s]", err.Error())
 		return err
 	}
+	_, err = protocol.ReadResponse(portal)
+	if err != nil {
+		log.Errorf("ReadResponse:[%s]", err.Error())
+		return err
+	}
+
+	//read newProxyResponse
 	addr := net.JoinHostPort("0.0.0.0", strconv.Itoa(b.LocalPort))
 	local, err := net.Dial("tcp", addr)
 	log.Info("dial tcp:", addr)
 	if err != nil {
-		_ = protocol.WriteMsg(portal, &protocol.CloseProxy{
+		err = protocol.WriteMsg(portal, &protocol.CloseProxy{
 			ProxyName: b.ProxyName,
 		})
+		if err != nil {
+			log.Errorf("send close proxy error:[%s]", err.Error())
+		}
+		_, err = protocol.ReadResponse(portal)
+		if err != nil {
+			log.Errorf("ReadResponse:[%s]", err.Error())
+		}
 		return err
 	}
 	workCtl := &protocol.WorkCtl{
 		ProxyName: b.ProxyName,
 	}
 	err = protocol.WriteMsg(portal, workCtl)
+	if err != nil {
+		return err
+	}
+	_, err = protocol.ReadResponse(portal)
 	if err != nil {
 		return err
 	}

@@ -121,3 +121,22 @@ func WriteMsg(c io.Writer, msg Command) (err error) {
 	}
 	return nil
 }
+func WriteSuccessResponse(c io.Writer) (err error) {
+	cmd := Success()
+	return WriteMsg(c, cmd)
+}
+func WriteErrResponse(c io.Writer, msg string) (err error) {
+	cmd := Error(msg)
+	return WriteMsg(c, cmd)
+}
+func ReadResponse(c io.Reader) (res *Response, err error) {
+	msg, err := ReadMsg(c)
+	if err != nil {
+		return nil, err
+	}
+	res = msg.(*Response)
+	if res.Code == -1 {
+		return nil, errors.New(res.Message)
+	}
+	return res, nil
+}
