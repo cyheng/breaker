@@ -1,4 +1,4 @@
-package command
+package protocol
 
 type Command interface {
 	Type() byte

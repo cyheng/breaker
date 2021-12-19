@@ -2,7 +2,6 @@ package feature
 
 import (
 	"breaker/pkg/protocol"
-	"breaker/pkg/protocol/command"
 	"context"
 	"errors"
 	log "github.com/sirupsen/logrus"
@@ -13,6 +12,8 @@ import (
 	"sync"
 	"time"
 )
+
+const FPortal = "portal"
 
 type PortalConfig struct {
 	ServerAddr string `ini:"server_addr"`
@@ -35,7 +36,7 @@ func (c *PortalConfig) NewFeature() (Feature, error) {
 }
 
 func init() {
-	RegisterConfig("portal", &PortalConfig{})
+	RegisterConfig(FPortal, &PortalConfig{})
 }
 
 type WorkingConn struct {
@@ -57,7 +58,7 @@ func (p *Portal) Addr() string {
 	return p.ServerAddr
 }
 func (p *Portal) Name() string {
-	return "portal"
+	return FPortal
 }
 func (p *Portal) Stop(ctx context.Context) error {
 	return nil
@@ -90,7 +91,7 @@ func (p *Portal) Start(ctx context.Context) error {
 
 				return err
 			}
-			log.Infof("get user connection [%s]", conn.RemoteAddr().String())
+			log.Infof("get client connection [%s]", conn.RemoteAddr().String())
 			go p.HandlerConn(conn)
 
 		}
@@ -124,16 +125,16 @@ func (p *Portal) HandlerConn(conn net.Conn) {
 		return
 	}
 	switch msg.Type() {
-	case command.TypeNewProxy:
-		pxy := msg.(*command.NewProxy)
+	case protocol.TypeNewProxy:
+		pxy := msg.(*protocol.NewProxy)
 		p.onNewProxy(pxy)
 		break
-	case command.TypeNewWorkCtl:
-		workCtl := msg.(*command.WorkCtl)
+	case protocol.TypeNewWorkCtl:
+		workCtl := msg.(*protocol.WorkCtl)
 		p.onNewWorkCtl(conn, workCtl)
 		break
-	case command.TypeCloseProxy:
-		cmd := msg.(*command.CloseProxy)
+	case protocol.TypeCloseProxy:
+		cmd := msg.(*protocol.CloseProxy)
 		p.onCloseProxy(cmd)
 	default:
 		log.Debug("unknown command")
@@ -143,7 +144,7 @@ func (p *Portal) HandlerConn(conn net.Conn) {
 }
 
 //onNewProxy 收到TypeNewProxy指令之后，监听客户端发送过来的端口
-func (p *Portal) onNewProxy(cmd *command.NewProxy) error {
+func (p *Portal) onNewProxy(cmd *protocol.NewProxy) error {
 	pxyName := cmd.ProxyName
 
 	hostPort := net.JoinHostPort(p.ServerAddr, strconv.Itoa(cmd.RemotePort))
@@ -163,7 +164,7 @@ func (p *Portal) onNewProxy(cmd *command.NewProxy) error {
 
 }
 
-func (p *Portal) onNewWorkCtl(clientWorkConn net.Conn, cmd *command.WorkCtl) error {
+func (p *Portal) onNewWorkCtl(clientWorkConn net.Conn, cmd *protocol.WorkCtl) error {
 	proxy, ok := p.RunningProxy[cmd.ProxyName]
 	if !ok {
 		return errors.New("proxy:" + cmd.ProxyName + " is not ready")
@@ -198,7 +199,7 @@ func (p *Portal) onNewWorkCtl(clientWorkConn net.Conn, cmd *command.WorkCtl) err
 	return nil
 }
 
-func (p *Portal) onCloseProxy(cmd *command.CloseProxy) error {
+func (p *Portal) onCloseProxy(cmd *protocol.CloseProxy) error {
 	proxy, ok := p.RunningProxy[cmd.ProxyName]
 	if !ok {
 		return errors.New("proxy:" + cmd.ProxyName + " is not ready")

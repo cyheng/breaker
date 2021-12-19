@@ -2,18 +2,24 @@ package feature
 
 import (
 	"breaker/pkg/protocol"
-	"breaker/pkg/protocol/command"
 	"context"
+	log "github.com/sirupsen/logrus"
 	"io"
 	"net"
 	"strconv"
 )
+
+const FBridge = "bridge"
 
 type BridgeConfig struct {
 	ServerAddr string `ini:"server_addr"`
 	LocalPort  int    `ini:"local_port"`
 	RemotePort int    `ini:"remote_port"`
 	ProxyName  string `ini:"proxy_name"`
+}
+
+func init() {
+	RegisterConfig(FBridge, &BridgeConfig{})
 }
 
 func (b *BridgeConfig) OnInit() {
@@ -52,31 +58,35 @@ func (b *Bridge) Stop(ctx context.Context) error {
 }
 
 func (b *Bridge) Name() string {
-	return "bridge"
+	return FBridge
 }
 
 func (b *Bridge) Connect() error {
+	log.Info("dial tcp:", b.ServerAddr)
+
 	portal, err := net.Dial("tcp", b.ServerAddr)
 	if err != nil {
 		return err
 	}
-	newProxy := &command.NewProxy{
+	newProxy := &protocol.NewProxy{
 		RemotePort: b.RemotePort,
 		ProxyName:  b.ProxyName,
 	}
+	log.Info("log message:", newProxy)
 	err = protocol.WriteMsg(portal, newProxy)
 	if err != nil {
 		return err
 	}
 	addr := net.JoinHostPort("0.0.0.0", strconv.Itoa(b.LocalPort))
 	local, err := net.Dial("tcp", addr)
+	log.Info("dial tcp:", addr)
 	if err != nil {
-		_ = protocol.WriteMsg(portal, &command.CloseProxy{
+		_ = protocol.WriteMsg(portal, &protocol.CloseProxy{
 			ProxyName: b.ProxyName,
 		})
 		return err
 	}
-	workCtl := &command.WorkCtl{
+	workCtl := &protocol.WorkCtl{
 		ProxyName: b.ProxyName,
 	}
 	err = protocol.WriteMsg(portal, workCtl)

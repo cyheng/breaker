@@ -1,6 +1,4 @@
-package command
-
-import "breaker/pkg/protocol"
+package protocol
 
 const TypeNewWorkCtl = 'w'
 
@@ -9,9 +7,9 @@ type WorkCtl struct {
 }
 
 func (n *WorkCtl) Type() byte {
-	return TypeNewProxy
+	return TypeNewWorkCtl
 }
 
 func init() {
-	protocol.RegisterCommand(&WorkCtl{})
+	RegisterCommand(&WorkCtl{})
 }

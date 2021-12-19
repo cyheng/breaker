@@ -1,6 +1,4 @@
-package command
-
-import "breaker/pkg/protocol"
+package protocol
 
 const TypeCloseProxy = 'c'
 
@@ -13,5 +11,5 @@ func (n *CloseProxy) Type() byte {
 }
 
 func init() {
-	protocol.RegisterCommand(&CloseProxy{})
+	RegisterCommand(&CloseProxy{})
 }

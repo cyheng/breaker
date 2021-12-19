@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"breaker/pkg/protocol/command"
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
@@ -40,7 +39,7 @@ func NewMsgCtl() *MsgCtl {
 	}
 }
 
-func RegisterCommand(msg command.Command) {
+func RegisterCommand(msg Command) {
 	_, ok := MsgManager.typeMap[msg.Type()]
 	if ok {
 		panic("message type:" + string(msg.Type()) + " has been register")
@@ -86,7 +85,7 @@ func readMsg(c io.Reader) (typeByte byte, buffer []byte, err error) {
 	return
 }
 
-func ReadMsg(c io.Reader) (msg command.Command, err error) {
+func ReadMsg(c io.Reader) (msg Command, err error) {
 	typeByte, buffer, err := readMsg(c)
 	if err != nil {
 		return
@@ -96,11 +95,15 @@ func ReadMsg(c io.Reader) (msg command.Command, err error) {
 		err = ErrMsgType
 		return
 	}
-	msg = reflect.New(t).Interface().(command.Command)
+	//指针类型获取真正type需要调用Elem
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	msg = reflect.New(t).Interface().(Command)
 	err = json.Unmarshal(buffer, &msg)
 	return
 }
-func WriteMsg(c io.Writer, msg command.Command) (err error) {
+func WriteMsg(c io.Writer, msg Command) (err error) {
 	typeByte := msg.Type()
 
 	content, err := json.Marshal(msg)

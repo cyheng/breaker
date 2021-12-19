@@ -30,6 +30,10 @@ var cmdRoot = &cobra.Command{
 			fmt.Println(err)
 			os.Exit(1)
 		}
+		if len(features) == 0 {
+			fmt.Println("at lease one feature required")
+			os.Exit(1)
+		}
 		breaker := app.New(features...)
 
 		if breaker.Run() != nil {

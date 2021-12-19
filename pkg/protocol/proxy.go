@@ -1,6 +1,4 @@
-package command
-
-import "breaker/pkg/protocol"
+package protocol
 
 const TypeNewProxy = 'p'
 
@@ -14,5 +12,5 @@ func (n *NewProxy) Type() byte {
 }
 
 func init() {
-	protocol.RegisterCommand(&NewProxy{})
+	RegisterCommand(&NewProxy{})
 }
