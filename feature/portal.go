@@ -2,6 +2,7 @@ package feature
 
 import (
 	"breaker/pkg/protocol"
+	"breaker/pkg/proxy"
 	"context"
 	"errors"
 	log "github.com/sirupsen/logrus"
@@ -27,7 +28,7 @@ func (c *PortalConfig) OnInit() {
 
 func (c *PortalConfig) NewFeature() (Feature, error) {
 	res := &Portal{
-		RunningProxy: make(map[string]net.Listener),
+		RunningProxy: make(map[string]*proxy.TcpProxy),
 		proxyLock:    sync.Mutex{},
 		WorkingConn:  make(chan WorkingConn),
 	}
@@ -54,7 +55,7 @@ type WorkingConn struct {
 type Portal struct {
 	ServerAddr string
 	//对用户访问的代理
-	RunningProxy map[string]net.Listener
+	RunningProxy map[string]*proxy.TcpProxy
 	//客户端发过来的连接
 	WorkingConn chan WorkingConn
 	proxyLock   sync.Mutex
@@ -126,13 +127,14 @@ func (p *Portal) Start(ctx context.Context) error {
 //5.Ping:返回pong
 //新建代理(client):
 //1. control:=connect to server(server_addr:port)
-//2. connect to localport(需要代理的port,proxy conn)
+//2. connect to localport(需要代理的port,proxy net)
 //3. worker:=connect to server(server_addr:port)
 //4. control 发送NewProxy:remote_port和proxy_name
-//5. copy(worker,proxy conn)
+//5. copy(worker,proxy net)
 //6. control 发送NewProxyWorker
 func (p *Portal) HandlerConn(conn net.Conn, ctx context.Context) {
 	defer conn.Close()
+	defer p.CloseProxy(conn)
 	for {
 		msg, err := protocol.ReadMsg(conn)
 		if err != nil {
@@ -151,7 +153,7 @@ func (p *Portal) HandlerConn(conn net.Conn, ctx context.Context) {
 			break
 		case protocol.TypeCloseProxy:
 			cmd := msg.(*protocol.CloseProxy)
-			err = p.onCloseProxy(conn, cmd, ctx)
+			err = p.onCloseProxy(cmd)
 			break
 		default:
 			log.Debug("unknown command")
@@ -177,13 +179,15 @@ func (p *Portal) onNewProxy(conn net.Conn, cmd *protocol.NewProxy, ctx context.C
 		return err
 	}
 	log.Infof("newProxy with address:[%s]", hostPort)
+
 	p.proxyLock.Lock()
 	defer p.proxyLock.Unlock()
 	if _, ok := p.RunningProxy[pxyName]; ok {
 		log.Error("proxy already exist!")
 		return errors.New("proxy already exist")
 	}
-	p.RunningProxy[pxyName] = listener
+
+	p.RunningProxy[pxyName] = proxy.NewTcpProxy(pxyName, listener, conn)
 	return nil
 
 }
@@ -225,13 +229,14 @@ func (p *Portal) onNewWorkCtl(clientWorkConn net.Conn, cmd *protocol.WorkCtl, ct
 				_, err := io.Copy(clientWorkConn, userconn)
 				return err
 			})
+
 		}
 	}()
 	return nil
 }
 
-func (p *Portal) onCloseProxy(conn net.Conn, cmd *protocol.CloseProxy, ctx context.Context) error {
-	log.Infof("close proxy:%s by client connection [%s]", cmd.ProxyName, conn.RemoteAddr().String())
+func (p *Portal) onCloseProxy(cmd *protocol.CloseProxy) error {
+	log.Infof("close proxy:%s  ", cmd.ProxyName)
 	proxy, ok := p.RunningProxy[cmd.ProxyName]
 	if !ok {
 		return errors.New("proxy:" + cmd.ProxyName + " is not ready")
@@ -243,5 +248,27 @@ func (p *Portal) onCloseProxy(conn net.Conn, cmd *protocol.CloseProxy, ctx conte
 		return err
 	}
 	delete(p.RunningProxy, cmd.ProxyName)
+	return nil
+}
+
+//在连接断开的时候，关闭代理
+func (p *Portal) CloseProxy(conn net.Conn) error {
+	p.proxyLock.Lock()
+	defer p.proxyLock.Unlock()
+	var delOne *proxy.TcpProxy
+	for _, pxy := range p.RunningProxy {
+		if pxy.CreateBy == conn {
+			delOne = pxy
+		}
+	}
+	if delOne == nil {
+		log.Error("proxy not found")
+		return errors.New("proxy not found")
+	}
+	err := delOne.Close()
+	if err != nil {
+		return err
+	}
+	delete(p.RunningProxy, delOne.Name)
 	return nil
 }

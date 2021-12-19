@@ -105,16 +105,10 @@ func (b *Bridge) Connect() error {
 	local, err := net.Dial("tcp", addr)
 	log.Info("dial tcp:", addr)
 	if err != nil {
-		err = protocol.WriteMsg(portal, &protocol.CloseProxy{
+		_ = protocol.WriteMsg(portal, &protocol.CloseProxy{
 			ProxyName: b.ProxyName,
 		})
-		if err != nil {
-			log.Errorf("send close proxy error:[%s]", err.Error())
-		}
-		_, err = protocol.ReadResponse(portal)
-		if err != nil {
-			log.Errorf("ReadResponse:[%s]", err.Error())
-		}
+		_, _ = protocol.ReadResponse(portal)
 		return err
 	}
 	workCtl := &protocol.WorkCtl{
