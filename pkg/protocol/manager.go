@@ -50,6 +50,7 @@ func RegisterCommand(msg Command) {
 
 func readMsg(c io.Reader) (typeByte byte, buffer []byte, err error) {
 	buffer = make([]byte, 1)
+
 	_, err = c.Read(buffer)
 	if err != nil {
 		return

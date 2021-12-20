@@ -122,6 +122,7 @@ func (b *Bridge) Connect() error {
 	if err != nil {
 		return err
 	}
+
 	go io.Copy(local, portal)
 	io.Copy(portal, local)
 	return nil

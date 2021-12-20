@@ -138,8 +138,12 @@ func (p *Portal) HandlerConn(conn net.Conn, ctx context.Context) {
 	for {
 		msg, err := protocol.ReadMsg(conn)
 		if err != nil {
-			log.Info(err)
-			return
+			log.Error(err)
+			if errors.Is(err, protocol.ErrMsgType) {
+				continue
+			} else {
+				return
+			}
 		}
 
 		switch msg.Type() {
@@ -193,14 +197,17 @@ func (p *Portal) onNewProxy(conn net.Conn, cmd *protocol.NewProxy, ctx context.C
 }
 
 func (p *Portal) onNewWorkCtl(clientWorkConn net.Conn, cmd *protocol.WorkCtl, ctx context.Context) error {
-	log.Infof("get client working control:[%s],proxy:[%s]", clientWorkConn.RemoteAddr().String(), cmd.ProxyName)
-	proxy, ok := p.RunningProxy[cmd.ProxyName]
+	log.Infof("get client working control:[%s],pxy:[%s]", clientWorkConn.RemoteAddr().String(), cmd.ProxyName)
+	pxy, ok := p.RunningProxy[cmd.ProxyName]
 	if !ok {
-		return errors.New("proxy:" + cmd.ProxyName + " is not ready")
+		return errors.New("pxy:" + cmd.ProxyName + " is not ready")
 	}
-	go func() {
+	go func(clientWorkConn net.Conn) {
+		defer func() {
+			log.Infof("proxy:[%s] exist", cmd.ProxyName)
+		}()
 		for {
-			userconn, err := proxy.Accept()
+			userconn, err := pxy.Accept()
 			var tempDelay time.Duration // how long to sleep on accept failure
 			if err != nil {
 				if err, ok := err.(net.Error); ok && err.Temporary() {
@@ -216,7 +223,7 @@ func (p *Portal) onNewWorkCtl(clientWorkConn net.Conn, cmd *protocol.WorkCtl, ct
 					time.Sleep(tempDelay)
 					continue
 				}
-				log.Infof("met proxy accept error: %s", err)
+				log.Infof("met pxy accept error: %s", err)
 
 				return
 			}
@@ -231,19 +238,19 @@ func (p *Portal) onNewWorkCtl(clientWorkConn net.Conn, cmd *protocol.WorkCtl, ct
 			})
 
 		}
-	}()
+	}(clientWorkConn)
 	return nil
 }
 
 func (p *Portal) onCloseProxy(cmd *protocol.CloseProxy) error {
-	log.Infof("close proxy:%s  ", cmd.ProxyName)
-	proxy, ok := p.RunningProxy[cmd.ProxyName]
+	log.Infof("close pxy:%s  ", cmd.ProxyName)
+	pxy, ok := p.RunningProxy[cmd.ProxyName]
 	if !ok {
-		return errors.New("proxy:" + cmd.ProxyName + " is not ready")
+		return errors.New("pxy:" + cmd.ProxyName + " is not ready")
 	}
 	p.proxyLock.Lock()
 	defer p.proxyLock.Unlock()
-	err := proxy.Close()
+	err := pxy.Close()
 	if err != nil {
 		return err
 	}
@@ -253,6 +260,7 @@ func (p *Portal) onCloseProxy(cmd *protocol.CloseProxy) error {
 
 //在连接断开的时候，关闭代理
 func (p *Portal) CloseProxy(conn net.Conn) error {
+	log.Info("close proxy")
 	p.proxyLock.Lock()
 	defer p.proxyLock.Unlock()
 	var delOne *proxy.TcpProxy
