@@ -17,4 +17,38 @@
 
 7.context是如何使用的
 
+8.HandleListener 和 control的区别
+- HandleListener 是处理客户端的Dial
+- 
  
+### client 流程:
+client会建立两个连接login(用户发送control)和ReqWorkConn(用于转发流量)
+login-> dial server(能不能省略这步？)
+ReqWorkConn-> dial server
+
+## read
+1. ReqWorkConn
+2. NewProxyResponse
+3. Pong(定时)
+
+### on userconnect
+4. ReqWorkConn
+
+## write
+1. newMaster
+2. Ping(定时)
+   ###on userconnect
+不做任何操作
+ 
+
+### server 流程:
+## read
+1. newMaster
+### on userconnect
+不做任何操作
+
+## write
+1. ReqWorkConn
+2. NewProxyResponse
+### on userconnect
+1. ReqWorkConn

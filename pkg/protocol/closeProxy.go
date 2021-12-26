@@ -1,7 +1,5 @@
 package protocol
 
-const TypeCloseProxy = 'c'
-
 type CloseProxy struct {
 	ProxyName string
 }

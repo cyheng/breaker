@@ -63,10 +63,11 @@ func (b *Bridge) Stop(ctx context.Context) error {
 		if err != nil {
 			log.Errorf("send CloseProxy error:[%s]", err.Error())
 		}
+		defer b.portal.Close()
 	}
-	err := b.portal.Close()
+
 	b.portal = nil
-	return err
+	return nil
 }
 
 func (b *Bridge) Name() string {
@@ -79,51 +80,68 @@ func (b *Bridge) Connect() error {
 	}
 	log.Info("dial tcp:", b.ServerAddr)
 	portal, err := net.Dial("tcp", b.ServerAddr)
-
 	if err != nil {
 		return err
 	}
+	defer portal.Close()
+
 	b.portal = portal
+	newMaster := &protocol.NewMaster{}
+	log.Infof("send message:[master]")
+	res, err := sendMsgAndWaitResponse(portal, newMaster)
+	if err != nil {
+		return err
+	}
+
+	traceId := res.Data.(string)
+	workCtl := &protocol.WorkCtl{
+		TraceID: traceId,
+	}
+	workerConn, err := net.Dial("tcp", b.ServerAddr)
+	if err != nil {
+		return err
+	}
+	defer workerConn.Close()
+	log.Infof("send message:[workCtl]")
+	_, err = sendMsgAndWaitResponse(workerConn, workCtl)
+	if err != nil {
+		return err
+	}
+	//read send new proxy
 	newProxy := &protocol.NewProxy{
+
 		RemotePort: b.RemotePort,
 		ProxyName:  b.ProxyName,
 	}
-	log.Info("log message:", newProxy)
-	err = protocol.WriteMsg(portal, newProxy)
+	log.Infof("send message:[NewProxy]")
+	_, err = sendMsgAndWaitResponse(portal, newProxy)
 	if err != nil {
-		log.Errorf("send new proxy error:[%s]", err.Error())
 		return err
 	}
-	_, err = protocol.ReadResponse(portal)
+
+	addr := net.JoinHostPort("0.0.0.0", strconv.Itoa(b.LocalPort))
+	log.Info("dial tcp:", addr)
+	local, err := net.Dial("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer local.Close()
+	go io.Copy(local, workerConn)
+
+	io.Copy(workerConn, local)
+	return nil
+}
+
+func sendMsgAndWaitResponse(portal net.Conn, cmd protocol.Command) (res *protocol.Response, err error) {
+
+	err = protocol.WriteMsg(portal, cmd)
+	if err != nil {
+		return nil, err
+	}
+	res, err = protocol.ReadResponse(portal)
 	if err != nil {
 		log.Errorf("ReadResponse:[%s]", err.Error())
-		return err
+		return nil, err
 	}
-
-	//read newProxyResponse
-	addr := net.JoinHostPort("0.0.0.0", strconv.Itoa(b.LocalPort))
-	local, err := net.Dial("tcp", addr)
-	log.Info("dial tcp:", addr)
-	if err != nil {
-		_ = protocol.WriteMsg(portal, &protocol.CloseProxy{
-			ProxyName: b.ProxyName,
-		})
-		_, _ = protocol.ReadResponse(portal)
-		return err
-	}
-	workCtl := &protocol.WorkCtl{
-		ProxyName: b.ProxyName,
-	}
-	err = protocol.WriteMsg(portal, workCtl)
-	if err != nil {
-		return err
-	}
-	_, err = protocol.ReadResponse(portal)
-	if err != nil {
-		return err
-	}
-
-	go io.Copy(local, portal)
-	io.Copy(portal, local)
-	return nil
+	return res, err
 }

@@ -1,9 +1,7 @@
 package protocol
 
-const TypeNewWorkCtl = 'w'
-
 type WorkCtl struct {
-	ProxyName string
+	TraceID string
 }
 
 func (n *WorkCtl) Type() byte {

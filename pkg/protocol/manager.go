@@ -126,6 +126,11 @@ func WriteSuccessResponse(c io.Writer) (err error) {
 	cmd := Success()
 	return WriteMsg(c, cmd)
 }
+func WriteSuccessResponseWithData(c io.Writer, data interface{}) (err error) {
+	cmd := SuccessWithData(data)
+	return WriteMsg(c, cmd)
+}
+
 func WriteErrResponse(c io.Writer, msg string) (err error) {
 	cmd := Error(msg)
 	return WriteMsg(c, cmd)

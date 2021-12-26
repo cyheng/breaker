@@ -1,7 +1,5 @@
 package protocol
 
-const TypeNewProxy = 'p'
-
 type NewProxy struct {
 	RemotePort int
 	ProxyName  string
