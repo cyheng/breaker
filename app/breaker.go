@@ -29,7 +29,7 @@ func (a *App) Run() error {
 		}
 		client, ok := f.(feature.Client)
 		if ok {
-			err := client.Connect()
+			err := client.Start()
 			if err != nil {
 				_ = client.Stop(a.ctx)
 				return err

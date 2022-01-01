@@ -16,7 +16,7 @@ type Server interface {
 }
 type Client interface {
 	Feature
-	Connect() error
+	Start() error
 	Stop(ctx context.Context) error
 }
 type FeatureConfig interface {

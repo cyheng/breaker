@@ -5,4 +5,5 @@ const (
 	TypeNewProxy   = 'p'
 	TypeNewWorkCtl = 'w'
 	TypeNewMaster  = 'm'
+	TypeReqWorkCtl = '1'
 )

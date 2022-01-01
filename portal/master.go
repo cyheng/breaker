@@ -5,10 +5,12 @@ import (
 	"breaker/pkg/proxy"
 	"context"
 	"errors"
+	"fmt"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"io"
 	"net"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"time"
@@ -45,9 +47,10 @@ func (m *MasterManager) GetMaster(traceID string) *Master {
 }
 
 type Master struct {
-	TrackID     string
-	Conn        net.Conn
-	WorkingConn chan net.Conn
+	TrackID           string
+	Conn              net.Conn
+	WorkingConn       chan net.Conn
+	WorkingConnMaxCnt int
 	//对用户访问的代理
 	RunningProxy map[string]*proxy.TcpProxy
 
@@ -55,12 +58,14 @@ type Master struct {
 }
 
 func NewMaster(TrackID string, Conn net.Conn) *Master {
+	//TODO:配置working chan的数量
+	WorkingConnMaxCnt := 10
 	return &Master{
-		TrackID: TrackID,
-		Conn:    Conn,
-		//TODO:配置working chan的数量
-		WorkingConn:  make(chan net.Conn, 10),
-		RunningProxy: make(map[string]*proxy.TcpProxy),
+		TrackID:           TrackID,
+		Conn:              Conn,
+		WorkingConn:       make(chan net.Conn, WorkingConnMaxCnt),
+		WorkingConnMaxCnt: WorkingConnMaxCnt,
+		RunningProxy:      make(map[string]*proxy.TcpProxy),
 	}
 }
 func (m *Master) HandlerMessage(ctx context.Context) {
@@ -88,6 +93,7 @@ func (m *Master) HandlerMessage(ctx context.Context) {
 			case *protocol.CloseProxy:
 				err = m.onCloseProxy(cmd)
 				break
+
 			default:
 				log.Debug("unknown command")
 				err = errors.New("unknown command")
@@ -138,11 +144,11 @@ func (p *Master) onNewProxy(conn net.Conn, cmd *protocol.NewProxy, ctx context.C
 					continue
 				}
 				log.Infof("met pxy accept error: %s", err)
-
+				listener.Close()
 				return
 			}
 			group, _ := errgroup.WithContext(ctx)
-			clientWorkConn := <-p.WorkingConn
+			clientWorkConn, err := p.GetWorkConn()
 			log.Infof("get worker connection:[%s]", clientWorkConn.RemoteAddr())
 			group.Go(func() error {
 				_, err := io.Copy(userconn, clientWorkConn)
@@ -204,4 +210,36 @@ func (p *Master) onCloseProxy(cmd *protocol.CloseProxy) error {
 func (p *Master) CloseProxy(conn net.Conn) error {
 	panic("not ready")
 	return nil
+}
+
+func (p *Master) GetWorkConn() (workConn net.Conn, err error) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Error("panic error: %v", err)
+			log.Error(string(debug.Stack()))
+		}
+	}()
+	var ok bool
+	// get a work connection from the chan
+	select {
+	case workConn = <-p.WorkingConn:
+		log.Debug("get work connection from chan")
+		_ = protocol.WriteMsg(p.Conn, &protocol.ReqWorkCtl{})
+	default:
+		_ = protocol.WriteMsg(p.Conn, &protocol.ReqWorkCtl{})
+		select {
+		case workConn, ok = <-p.WorkingConn:
+			if !ok {
+				log.Warn("no work connections avaiable, %v", err)
+				return
+			}
+
+		case <-time.After(time.Duration(10) * time.Second):
+			err = fmt.Errorf("timeout trying to get work connection")
+			log.Warn("%v", err)
+			return
+		}
+	}
+
+	return
 }
