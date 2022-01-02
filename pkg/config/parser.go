@@ -9,12 +9,12 @@ import (
 	"strings"
 )
 
-type Loader func([]byte) ([]feature.Feature, error)
+type Loader func([]byte) (feature.FeatureConfig, error)
 
 var Loaders = make(map[string]Loader)
 
 func init() {
-	RegisterLoader("ini", func(b []byte) (result []feature.Feature, err error) {
+	RegisterLoader("ini", func(b []byte) (feature.FeatureConfig, error) {
 		f, err := ini.LoadSources(ini.LoadOptions{
 			Insensitive:         false,
 			InsensitiveSections: false,
@@ -25,28 +25,21 @@ func init() {
 		if err != nil {
 			return nil, err
 		}
-		requiredFeatures := []feature.FeatureConfig{
-			&feature.LoggerConfig{},
-		}
-		for _, f := range requiredFeatures {
-			f.OnInit()
-		}
+
 		for _, item := range f.Sections() {
 			secName := item.Name()
 			config, e := feature.GetConfig(secName)
 			if e != nil {
 				continue
 			}
-			item.MapTo(config)
-			config.OnInit()
-			f, err := config.NewFeature()
+			err := item.MapTo(config)
 			if err != nil {
-				continue
+				return nil, err
 			}
-			result = append(result, f)
-
+			config.OnInit()
+			return config, nil
 		}
-		return
+		return nil, errors.New("no available configuration")
 	})
 }
 
@@ -54,7 +47,7 @@ func RegisterLoader(ext string, c Loader) {
 	Loaders[ext] = c
 }
 
-func LoadFromFile(cfgFile string) ([]feature.Feature, error) {
+func LoadFromFile(cfgFile string) (feature.FeatureConfig, error) {
 	ext := strings.ToLower(filepath.Ext(cfgFile))
 	ext = strings.TrimLeft(ext, ".")
 	b, err := os.ReadFile(cfgFile)

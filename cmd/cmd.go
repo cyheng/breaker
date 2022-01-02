@@ -1,8 +1,8 @@
 package main
 
 import (
-	"breaker/app"
 	"breaker/pkg/config"
+	"breaker/services"
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -26,17 +26,13 @@ var cmdRoot = &cobra.Command{
 		if showVersion {
 			fmt.Println(version)
 		}
-		features, err := config.LoadFromFile(cfgFile)
+		config, err := config.LoadFromFile(cfgFile)
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)
+
 		}
-		if len(features) == 0 {
-			fmt.Println("at lease one feature required")
-			os.Exit(1)
-		}
-		breaker := app.New(features...)
-		err = breaker.Run()
+		err = services.Run(config.ServiceName(), config)
 		if err != nil {
 			log.Error(err)
 			os.Exit(1)
