@@ -14,18 +14,23 @@ import (
 )
 
 type Bridge struct {
-	ServerAddr  string
-	LocalPort   int
-	RemotePort  int
-	ProxyName   string
-	portal      net.Conn
-	traceId     string
-	msgReadChan chan protocol.Command
+	ServerAddr string
+	LocalPort  int
+	RemotePort int
+	ProxyName  string
+	master     net.Conn
+	traceId    string
+	//写入的goroutine中关闭chan
+	msgReadChan  chan protocol.Command
+	msgWriteChan chan protocol.Command
+	workingChan  chan struct{}
 }
 
 func NewBridge() Service {
 	bridge := &Bridge{
-		msgReadChan: make(chan protocol.Command, 10),
+		msgReadChan:  make(chan protocol.Command, 10),
+		msgWriteChan: make(chan protocol.Command, 10),
+		workingChan:  make(chan struct{}, 10),
 	}
 
 	return bridge
@@ -37,66 +42,72 @@ func (b *Bridge) Init(cfg *feature.BridgeConfig) {
 	b.ProxyName = cfg.ProxyName
 }
 func (b *Bridge) Stop(ctx context.Context) {
-	if b.portal != nil {
-		err := protocol.WriteMsg(b.portal, &protocol.CloseProxy{
+	if b.master != nil {
+		err := protocol.WriteMsg(b.master, &protocol.CloseProxy{
 			ProxyName: b.ProxyName,
 		})
 		if err != nil {
 			log.Errorf("send CloseProxy error:[%s]", err.Error())
 		}
-		defer b.portal.Close()
+		defer b.master.Close()
 	}
 	close(b.msgReadChan)
-	b.portal = nil
+	b.master = nil
 
 }
 
 func (b *Bridge) Start(args interface{}, ctx context.Context) error {
 	cfg := args.(*feature.BridgeConfig)
 	b.Init(cfg)
-	if b.portal != nil {
-		return errors.New("already connect to portal:" + b.portal.RemoteAddr().String())
+	if b.master != nil {
+		return errors.New("already connect to master:" + b.master.RemoteAddr().String())
 	}
-
-	portal, traceId, err := b.newMaster()
+	portal, traceId, err := getMaster(b.ServerAddr)
 	if err != nil {
 		return err
 	}
+	b.master = portal
+	b.traceId = traceId
 
-	//read send new proxy
+	//send new proxy
 	newProxy := &protocol.NewProxy{
-
 		RemotePort: b.RemotePort,
 		ProxyName:  b.ProxyName,
 	}
-	log.Infof("send message:[NewProxy]")
-	_, err = sendMsgAndWaitResponse(portal, newProxy)
-	if err != nil {
-		return err
-	}
+	b.msgWriteChan <- newProxy
+
+	ctx, cancel := context.WithCancel(ctx)
 	egg, _ := errgroup.WithContext(ctx)
 	egg.Go(func() error {
-		return b.SendWorkerConn(traceId, ctx)
+		return b.SendWorkerConn(ctx)
 	})
 	egg.Go(func() error {
-		return b.getMessageFromPortal(portal, ctx)
+		return b.readHandler(portal, ctx)
 	})
-
+	egg.Go(func() error {
+		return b.writeHandler(portal, ctx)
+	})
 	egg.Go(func() error {
 		return b.msgHandler(ctx)
 	})
-
-	return egg.Wait()
+	for i := 0; i < 3; i++ {
+		b.workingChan <- struct{}{}
+	}
+	err = egg.Wait()
+	if err != nil {
+		cancel()
+		return err
+	}
+	return nil
 }
 
-func (b *Bridge) newMaster() (net.Conn, string, error) {
-	log.Info("dial tcp:", b.ServerAddr)
-	portal, err := net.Dial("tcp", b.ServerAddr)
+func getMaster(addr string) (net.Conn, string, error) {
+	//get master connection
+	log.Info("dial tcp:", addr)
+	portal, err := net.Dial("tcp", addr)
 	if err != nil {
 		return nil, "", err
 	}
-	b.portal = portal
-
 	newMaster := &protocol.NewMaster{}
 	log.Infof("send message:[master]")
 	res, err := sendMsgAndWaitResponse(portal, newMaster)
@@ -104,14 +115,30 @@ func (b *Bridge) newMaster() (net.Conn, string, error) {
 		return nil, "", err
 	}
 	traceId := res.Data.(string)
-	b.traceId = traceId
-	return portal, traceId, err
+	log.Infof("get master with traceid:[%s]", traceId)
+	return portal, traceId, nil
 }
 
-func (b *Bridge) SendWorkerConn(traceId string, ctx context.Context) error {
+func (b *Bridge) SendWorkerConn(ctx context.Context) error {
+	for {
+		select {
+		case <-b.workingChan:
+			go b.createWorker(ctx)
+		case <-ctx.Done():
+			return ctx.Err()
 
+		}
+	}
+}
+
+func (b *Bridge) createWorker(ctx context.Context) (err error) {
+	defer func() {
+		if err != nil {
+			log.Errorf("error:[%+v]", err)
+		}
+	}()
 	workCtl := &protocol.WorkCtl{
-		TraceID: traceId,
+		TraceID: b.traceId,
 	}
 	log.Infof("send message:[workCtl]")
 
@@ -132,13 +159,20 @@ func (b *Bridge) SendWorkerConn(traceId string, ctx context.Context) error {
 		return err
 	}
 	defer local.Close()
-	go io.Copy(local, workerConn)
+	egg, _ := errgroup.WithContext(ctx)
+	egg.Go(func() error {
+		_, err := io.Copy(local, workerConn)
+		return err
+	})
+	egg.Go(func() error {
+		_, err := io.Copy(workerConn, local)
+		return err
+	})
 
-	io.Copy(workerConn, local)
-	return nil
+	return egg.Wait()
 }
 
-func (b *Bridge) getMessageFromPortal(portal net.Conn, ctx context.Context) error {
+func (b *Bridge) readHandler(portal net.Conn, ctx context.Context) error {
 	defer func() {
 		if err := recover(); err != nil {
 			log.Error("panic error: %v", err)
@@ -146,6 +180,7 @@ func (b *Bridge) getMessageFromPortal(portal net.Conn, ctx context.Context) erro
 		}
 	}()
 	for {
+
 		cmd, err := protocol.ReadMsg(portal)
 		if err != nil {
 			if err == io.EOF {
@@ -172,18 +207,45 @@ func (b *Bridge) msgHandler(ctx context.Context) (err error) {
 	for {
 		select {
 		case msg := <-b.msgReadChan:
-			switch msg.(type) {
+			switch cmd := msg.(type) {
 			case *protocol.ReqWorkCtl:
-				go b.SendWorkerConn(b.traceId, ctx)
-				break
+				log.Infof("get ReqWorkCtl")
+				b.workingChan <- struct{}{}
+			case *protocol.Response:
+				if cmd.Code == -1 {
+					return errors.New(cmd.Message)
+				}
 			default:
-				log.Debug("unknown command")
-				err = errors.New("unknown command")
+				return errors.New("unknown command")
 			}
+		case <-ctx.Done():
+			log.Infof("msgHandler exit with ctx done")
+			return nil
 		}
 
 	}
 
+}
+
+func (b *Bridge) writeHandler(portal net.Conn, ctx context.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Error("panic error: %v", err)
+			log.Error(string(debug.Stack()))
+		}
+	}()
+	for {
+		select {
+		case msg := <-b.msgWriteChan:
+			err := protocol.WriteMsg(portal, msg)
+			if err != nil {
+				return err
+			}
+		case <-ctx.Done():
+			log.Infof("witeHandler exit with ctx done")
+			return nil
+		}
+	}
 }
 
 func sendMsgAndWaitResponse(portal net.Conn, cmd protocol.Command) (res *protocol.Response, err error) {

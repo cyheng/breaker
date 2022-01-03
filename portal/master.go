@@ -5,7 +5,6 @@ import (
 	"breaker/pkg/proxy"
 	"context"
 	"errors"
-	"fmt"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"io"
@@ -50,6 +49,8 @@ type Master struct {
 	TrackID           string
 	Conn              net.Conn
 	WorkingConn       chan net.Conn
+	readChan          chan interface{}
+	writeChan         chan protocol.Command
 	WorkingConnMaxCnt int
 	//对用户访问的代理
 	RunningProxy map[string]*proxy.TcpProxy
@@ -64,50 +65,39 @@ func NewMaster(TrackID string, Conn net.Conn) *Master {
 		TrackID:           TrackID,
 		Conn:              Conn,
 		WorkingConn:       make(chan net.Conn, WorkingConnMaxCnt),
+		readChan:          make(chan interface{}, 20),
+		writeChan:         make(chan protocol.Command, 20),
 		WorkingConnMaxCnt: WorkingConnMaxCnt,
 		RunningProxy:      make(map[string]*proxy.TcpProxy),
 	}
 }
-func (m *Master) HandlerMessage(ctx context.Context) {
+func (m *Master) HandlerMessage(ctx context.Context) error {
 	defer func() {
 		log.Infof("exist handler message")
 	}()
-	for {
-		select {
-		case <-ctx.Done():
-			m.Close()
-			return
-		default:
-			msg, err := protocol.ReadMsg(m.Conn)
-			if err != nil {
-				log.Error(ctx.Value(TraceID), err)
-				if err == protocol.ErrMsgFormat {
-					continue
-				}
-				return
-			}
-			switch cmd := msg.(type) {
-			case *protocol.NewProxy:
-				err = m.onNewProxy(m.Conn, cmd, ctx)
-				break
-			case *protocol.CloseProxy:
-				err = m.onCloseProxy(cmd)
-				break
-
-			default:
-				log.Debug("unknown command")
-				err = errors.New("unknown command")
-			}
-			if err != nil {
-				log.Error(ctx.Value(TraceID), err)
-				_ = protocol.WriteErrResponse(m.Conn, err.Error())
-			}
-		}
+	ctx, cancel := context.WithCancel(ctx)
+	egg, _ := errgroup.WithContext(ctx)
+	egg.Go(func() error {
+		return m.readMessage(ctx)
+	})
+	egg.Go(func() error {
+		return m.handlerMessage(ctx)
+	})
+	egg.Go(func() error {
+		return m.writeMessage(ctx)
+	})
+	err := egg.Wait()
+	if err != nil {
+		log.Errorf("%+v", err)
+		cancel()
 	}
+	return err
 }
 func (m *Master) Close() {
 	m.Conn.Close()
 	close(m.WorkingConn)
+	close(m.writeChan)
+	close(m.readChan)
 }
 
 //onNewProxy 收到TypeNewProxy指令之后，监听客户端发送过来的端口
@@ -149,6 +139,11 @@ func (p *Master) onNewProxy(conn net.Conn, cmd *protocol.NewProxy, ctx context.C
 			}
 			group, _ := errgroup.WithContext(ctx)
 			clientWorkConn, err := p.GetWorkConn()
+			if err != nil {
+				log.Errorf("can not get work conn with err:[%+v]", err)
+				userconn.Close()
+				continue
+			}
 			log.Infof("get worker connection:[%s]", clientWorkConn.RemoteAddr())
 			group.Go(func() error {
 				_, err := io.Copy(userconn, clientWorkConn)
@@ -158,13 +153,10 @@ func (p *Master) onNewProxy(conn net.Conn, cmd *protocol.NewProxy, ctx context.C
 				_, err := io.Copy(clientWorkConn, userconn)
 				return err
 			})
-			err = group.Wait()
-			if err != nil {
-				//TODO:判断WorkingConn是否关闭
-				//Working Conn回归到pool中
-				//p.WorkingConn <- clientWorkConn
-				log.Error(err)
-			}
+			//err = group.Wait()
+			//if err != nil {
+			//	log.Error(err)
+			//}
 
 		}
 	}()
@@ -173,7 +165,8 @@ func (p *Master) onNewProxy(conn net.Conn, cmd *protocol.NewProxy, ctx context.C
 	if err2 != nil {
 		return err2
 	}
-	_ = protocol.WriteSuccessResponse(p.Conn)
+	res := protocol.Success()
+	p.writeChan <- res
 	return nil
 
 }
@@ -206,40 +199,89 @@ func (p *Master) onCloseProxy(cmd *protocol.CloseProxy) error {
 	return nil
 }
 
-//在连接断开的时候，关闭代理
-func (p *Master) CloseProxy(conn net.Conn) error {
-	panic("not ready")
-	return nil
-}
-
-func (p *Master) GetWorkConn() (workConn net.Conn, err error) {
+func (p *Master) GetWorkConn() (net.Conn, error) {
 	defer func() {
 		if err := recover(); err != nil {
 			log.Error("panic error: %v", err)
 			log.Error(string(debug.Stack()))
 		}
 	}()
-	var ok bool
-	// get a work connection from the chan
-	select {
-	case workConn = <-p.WorkingConn:
-		log.Debug("get work connection from chan")
-		_ = protocol.WriteMsg(p.Conn, &protocol.ReqWorkCtl{})
-	default:
-		_ = protocol.WriteMsg(p.Conn, &protocol.ReqWorkCtl{})
-		select {
-		case workConn, ok = <-p.WorkingConn:
-			if !ok {
-				log.Warn("no work connections avaiable, %v", err)
-				return
-			}
 
-		case <-time.After(time.Duration(10) * time.Second):
-			err = fmt.Errorf("timeout trying to get work connection")
-			log.Warn("%v", err)
-			return
+	// get a work connection from the chan
+	for {
+		select {
+		case workConn := <-p.WorkingConn:
+			log.Info("get work connection from chan")
+			p.writeChan <- &protocol.ReqWorkCtl{}
+			return workConn, nil
+		case <-time.After(time.Duration(5) * time.Second):
+			return nil, errors.New("timeout trying to get work connection")
 		}
 	}
 
-	return
+}
+
+func (m *Master) readMessage(ctx context.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Error("panic error: %v", err)
+			log.Error(string(debug.Stack()))
+		}
+	}()
+	for {
+		msg, err := protocol.ReadMsg(m.Conn)
+		if err != nil {
+			log.Error(ctx.Value(TraceID), err)
+			if err == protocol.ErrMsgFormat {
+				continue
+			}
+			return err
+		}
+		m.readChan <- msg
+	}
+
+}
+
+func (m *Master) handlerMessage(ctx context.Context) (err error) {
+	for {
+		select {
+		case <-ctx.Done():
+			m.Close()
+			return ctx.Err()
+		case msg := <-m.readChan:
+			switch cmd := msg.(type) {
+			case *protocol.NewProxy:
+				err = m.onNewProxy(m.Conn, cmd, ctx)
+			case *protocol.CloseProxy:
+				err = m.onCloseProxy(cmd)
+			default:
+				log.Info("unknown command")
+				err = errors.New("unknown command")
+			}
+			if err != nil {
+				log.Error(ctx.Value(TraceID), err)
+				cmd := protocol.Error(err.Error())
+				m.writeChan <- cmd
+			}
+
+		}
+	}
+}
+
+func (m *Master) writeMessage(ctx context.Context) error {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Error("panic error: %v", err)
+			log.Error(string(debug.Stack()))
+		}
+	}()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case msg := <-m.writeChan:
+			_ = protocol.WriteMsg(m.Conn, msg)
+		}
+
+	}
 }

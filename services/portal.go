@@ -96,7 +96,6 @@ func (p *Portal) Start(args interface{}, ctx context.Context) error {
 // master 负责portal和bridge之间的沟通, 如：新建代理/关闭代理/心跳包
 // workCtl 注册 客户端的coon,用于流量转发
 func (p *Portal) HandlerConn(conn net.Conn, ctx context.Context) {
-	//defer conn.Close()
 	msg, err := protocol.ReadMsg(conn)
 	if err != nil {
 		log.Error(ctx.Value(portal.TraceID), err)
@@ -104,13 +103,10 @@ func (p *Portal) HandlerConn(conn net.Conn, ctx context.Context) {
 		return
 	}
 	switch cmd := msg.(type) {
-
 	case *protocol.NewMaster:
 		err = p.onNewMaster(conn, cmd, ctx)
-		break
 	case *protocol.WorkCtl:
 		err = p.onNewWorkCtl(conn, cmd)
-		break
 	default:
 		log.Debug("unknown command")
 		err = errors.New("unknown command")
@@ -128,6 +124,7 @@ func (p *Portal) onNewMaster(conn net.Conn, cmd *protocol.NewMaster, ctx context
 	p.masterManager.AddMaster(master)
 
 	go master.HandlerMessage(ctx)
+
 	return protocol.WriteSuccessResponseWithData(conn, traceID)
 }
 func (p *Portal) onNewWorkCtl(clientWorkConn net.Conn, cmd *protocol.WorkCtl) error {
@@ -148,11 +145,11 @@ func (p *Portal) onNewWorkCtl(clientWorkConn net.Conn, cmd *protocol.WorkCtl) er
 
 	select {
 	case master.WorkingConn <- clientWorkConn:
-		log.Debug("new work connection registered")
+		log.Info("new work connection registered")
 		_ = protocol.WriteSuccessResponse(clientWorkConn)
 		return nil
 	default:
-		log.Debug("work connection pool is full, discarding")
+		log.Info("work connection pool is full, discarding")
 		_ = protocol.WriteErrResponse(clientWorkConn, "work connection pool is full, discarding")
 		return fmt.Errorf("work connection pool is full, discarding")
 	}

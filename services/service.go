@@ -4,8 +4,8 @@ import (
 	"breaker/feature"
 	"context"
 	"fmt"
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"runtime/debug"
 )
 
 type Service interface {
@@ -43,7 +43,9 @@ func Run(name string, args interface{}) error {
 	defer func() {
 		err := recover()
 		if err != nil {
-			log.Fatalf("%s servcie crashed, ERR: %s\ntrace:%s", name, err, string(debug.Stack()))
+			e := err.(error)
+			e = errors.WithStack(e)
+			log.Fatalf("%s servcie crashed, ERR: %+v", name, e)
 		}
 	}()
 	err := instance.App.Start(args, context.Background())
