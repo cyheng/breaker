@@ -121,6 +121,7 @@ func (p *Portal) onNewMaster(conn net.Conn, cmd *protocol.NewMaster, ctx context
 	traceID := ctx.Value(portal.TraceID).(string)
 	master := portal.NewMaster(traceID, conn)
 	log.Infof("add master[%s]", traceID)
+	//TODO:remove old master
 	p.masterManager.AddMaster(master)
 
 	go master.HandlerMessage(ctx)

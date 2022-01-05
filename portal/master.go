@@ -55,7 +55,8 @@ type Master struct {
 	//对用户访问的代理
 	RunningProxy map[string]*proxy.TcpProxy
 
-	proxyLock sync.Mutex
+	proxyLock sync.RWMutex
+	once      sync.Once
 }
 
 func NewMaster(TrackID string, Conn net.Conn) *Master {
@@ -71,6 +72,8 @@ func NewMaster(TrackID string, Conn net.Conn) *Master {
 		RunningProxy:      make(map[string]*proxy.TcpProxy),
 	}
 }
+
+//如何在Handler Message之中直到conn close?
 func (m *Master) HandlerMessage(ctx context.Context) error {
 	defer func() {
 		log.Infof("exist handler message")
@@ -78,7 +81,7 @@ func (m *Master) HandlerMessage(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	egg, _ := errgroup.WithContext(ctx)
 	egg.Go(func() error {
-		return m.readMessage(ctx)
+		return m.readMessage(ctx, cancel)
 	})
 	egg.Go(func() error {
 		return m.handlerMessage(ctx)
@@ -86,6 +89,7 @@ func (m *Master) HandlerMessage(ctx context.Context) error {
 	egg.Go(func() error {
 		return m.writeMessage(ctx)
 	})
+	//TODO:fix bug，readMessage阻塞
 	err := egg.Wait()
 	if err != nil {
 		log.Errorf("%+v", err)
@@ -94,17 +98,21 @@ func (m *Master) HandlerMessage(ctx context.Context) error {
 	return err
 }
 func (m *Master) Close() {
-	m.Conn.Close()
-	close(m.WorkingConn)
-	close(m.writeChan)
-	close(m.readChan)
+	m.once.Do(func() {
+		m.Conn.Close()
+		close(m.WorkingConn)
+		close(m.writeChan)
+		close(m.readChan)
+		m.CloseAllProxy()
+	})
+
 }
 
 //onNewProxy 收到TypeNewProxy指令之后，监听客户端发送过来的端口
 func (p *Master) onNewProxy(conn net.Conn, cmd *protocol.NewProxy, ctx context.Context) error {
 	pxyName := cmd.ProxyName
-
 	hostPort := net.JoinHostPort("0.0.0.0", strconv.Itoa(cmd.RemotePort))
+	//TODO: conn close的时候，listener也要close
 	listener, err := net.Listen("tcp", hostPort)
 	if err != nil {
 		log.Error("new Proxy error:", err)
@@ -145,18 +153,25 @@ func (p *Master) onNewProxy(conn net.Conn, cmd *protocol.NewProxy, ctx context.C
 				continue
 			}
 			log.Infof("get worker connection:[%s]", clientWorkConn.RemoteAddr())
+			//TODO:这个阻塞了
 			group.Go(func() error {
+				defer func() {
+					userconn.Close()
+				}()
 				_, err := io.Copy(userconn, clientWorkConn)
 				return err
 			})
 			group.Go(func() error {
+				defer func() {
+					clientWorkConn.Close()
+				}()
 				_, err := io.Copy(clientWorkConn, userconn)
 				return err
 			})
-			//err = group.Wait()
-			//if err != nil {
-			//	log.Error(err)
-			//}
+			err = group.Wait()
+			if err != nil {
+				log.Error(err)
+			}
 
 		}
 	}()
@@ -170,7 +185,15 @@ func (p *Master) onNewProxy(conn net.Conn, cmd *protocol.NewProxy, ctx context.C
 	return nil
 
 }
+func (p *Master) GetProxy(pxyName string) *proxy.TcpProxy {
+	p.proxyLock.RLock()
+	defer p.proxyLock.RUnlock()
+	if pxy, ok := p.RunningProxy[pxyName]; ok {
+		return pxy
+	}
 
+	return nil
+}
 func (p *Master) AddProxy(conn net.Conn, pxyName string, listener net.Listener) error {
 	p.proxyLock.Lock()
 	defer p.proxyLock.Unlock()
@@ -198,7 +221,17 @@ func (p *Master) onCloseProxy(cmd *protocol.CloseProxy) error {
 	delete(p.RunningProxy, cmd.ProxyName)
 	return nil
 }
+func (p *Master) CloseAllProxy() error {
+	log.Infof("close all pxy")
 
+	p.proxyLock.Lock()
+	for _, tcpProxy := range p.RunningProxy {
+		_ = tcpProxy.Close()
+	}
+	defer p.proxyLock.Unlock()
+
+	return nil
+}
 func (p *Master) GetWorkConn() (net.Conn, error) {
 	defer func() {
 		if err := recover(); err != nil {
@@ -221,20 +254,26 @@ func (p *Master) GetWorkConn() (net.Conn, error) {
 
 }
 
-func (m *Master) readMessage(ctx context.Context) error {
+func (m *Master) readMessage(ctx context.Context, cancel context.CancelFunc) error {
 	defer func() {
 		if err := recover(); err != nil {
 			log.Error("panic error: %v", err)
 			log.Error(string(debug.Stack()))
 		}
 	}()
+
 	for {
+		//m.Conn.SetReadDeadline(time.Now().Add(time.Second * 5))
+
 		msg, err := protocol.ReadMsg(m.Conn)
+		//m.Conn.SetReadDeadline(time.Time{})
+
 		if err != nil {
 			log.Error(ctx.Value(TraceID), err)
 			if err == protocol.ErrMsgFormat {
 				continue
 			}
+			cancel()
 			return err
 		}
 		m.readChan <- msg
