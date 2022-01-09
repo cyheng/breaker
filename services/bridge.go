@@ -23,14 +23,14 @@ type Bridge struct {
 	//写入的goroutine中关闭chan
 	msgReadChan  chan protocol.Command
 	msgWriteChan chan protocol.Command
-	workingChan  chan struct{}
+	workingChan  chan string
 }
 
 func NewBridge() Service {
 	bridge := &Bridge{
 		msgReadChan:  make(chan protocol.Command, 10),
 		msgWriteChan: make(chan protocol.Command, 10),
-		workingChan:  make(chan struct{}, 10),
+		workingChan:  make(chan string, 10),
 	}
 
 	return bridge
@@ -91,7 +91,7 @@ func (b *Bridge) Start(args interface{}, ctx context.Context) error {
 		return b.msgHandler(ctx)
 	})
 	for i := 0; i < 3; i++ {
-		b.workingChan <- struct{}{}
+		b.workingChan <- b.ProxyName
 	}
 	err = egg.Wait()
 	if err != nil {
@@ -122,8 +122,8 @@ func getMaster(addr string) (net.Conn, string, error) {
 func (b *Bridge) SendWorkerConn(ctx context.Context) error {
 	for {
 		select {
-		case <-b.workingChan:
-			go b.createWorker(ctx)
+		case pxy := <-b.workingChan:
+			go b.createWorker(ctx, pxy)
 		case <-ctx.Done():
 			return ctx.Err()
 
@@ -131,14 +131,18 @@ func (b *Bridge) SendWorkerConn(ctx context.Context) error {
 	}
 }
 
-func (b *Bridge) createWorker(ctx context.Context) (err error) {
+func (b *Bridge) createWorker(ctx context.Context, pxy string) (err error) {
 	defer func() {
 		if err != nil {
 			log.Errorf("error:[%+v]", err)
 		}
 	}()
+	if b.ProxyName != pxy {
+		return errors.New("pxy not found")
+	}
 	workCtl := &protocol.WorkCtl{
-		TraceID: b.traceId,
+		TraceID:   b.traceId,
+		ProxyName: pxy,
 	}
 	log.Infof("send message:[workCtl]")
 
@@ -210,7 +214,7 @@ func (b *Bridge) msgHandler(ctx context.Context) (err error) {
 			switch cmd := msg.(type) {
 			case *protocol.ReqWorkCtl:
 				log.Infof("get ReqWorkCtl")
-				b.workingChan <- struct{}{}
+				b.workingChan <- cmd.ProxyName
 			case *protocol.Response:
 				if cmd.Code == -1 {
 					return errors.New(cmd.Message)

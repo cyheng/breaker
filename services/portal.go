@@ -148,9 +148,12 @@ func (p *Portal) onNewWorkCtl(clientWorkConn net.Conn, cmd *protocol.WorkCtl) er
 		_ = protocol.WriteErrResponse(clientWorkConn, "master not found")
 		return errors.New("master not found")
 	}
-
+	pxy, ok := master.GetProxy(cmd.ProxyName)
+	if !ok {
+		return errors.New("pxy not found")
+	}
 	select {
-	case master.WorkingConn <- clientWorkConn:
+	case pxy.WorkingChan <- clientWorkConn:
 		log.Info("new work connection registered")
 		_ = protocol.WriteSuccessResponse(clientWorkConn)
 		return nil

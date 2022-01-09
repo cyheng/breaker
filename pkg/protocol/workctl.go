@@ -1,7 +1,8 @@
 package protocol
 
 type WorkCtl struct {
-	TraceID string
+	TraceID   string
+	ProxyName string
 }
 
 func (n *WorkCtl) Type() byte {
@@ -9,6 +10,7 @@ func (n *WorkCtl) Type() byte {
 }
 
 type ReqWorkCtl struct {
+	ProxyName string
 }
 
 func (n *ReqWorkCtl) Type() byte {

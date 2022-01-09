@@ -55,9 +55,9 @@ func (m *MasterManager) Range(f func(traceId, master interface{}) bool) {
 
 //Master 客户端和服务端的
 type Master struct {
-	TrackID           string
-	Conn              net.Conn
-	WorkingConn       chan net.Conn
+	TrackID string
+	Conn    net.Conn
+
 	readChan          chan interface{}
 	writeChan         chan protocol.Command
 	WorkingConnMaxCnt int
@@ -70,16 +70,13 @@ type Master struct {
 }
 
 func NewMaster(TrackID string, Conn net.Conn) *Master {
-	//TODO:配置working chan的数量
-	WorkingConnMaxCnt := 10
+
 	return &Master{
-		TrackID:           TrackID,
-		Conn:              Conn,
-		WorkingConn:       make(chan net.Conn, WorkingConnMaxCnt),
-		readChan:          make(chan interface{}, 20),
-		writeChan:         make(chan protocol.Command, 20),
-		WorkingConnMaxCnt: WorkingConnMaxCnt,
-		RunningProxy:      make(map[string]*proxy.TcpProxy),
+		TrackID:      TrackID,
+		Conn:         Conn,
+		readChan:     make(chan interface{}, 20),
+		writeChan:    make(chan protocol.Command, 20),
+		RunningProxy: make(map[string]*proxy.TcpProxy),
 	}
 }
 
@@ -111,7 +108,6 @@ func (m *Master) HandlerMessage(ctx context.Context, closeFn func(m *Master)) er
 func (m *Master) Close() {
 	m.once.Do(func() {
 		m.Conn.Close()
-		close(m.WorkingConn)
 		close(m.writeChan)
 		close(m.readChan)
 		m.CloseAllProxy()
@@ -130,7 +126,10 @@ func (p *Master) onNewProxy(conn net.Conn, cmd *protocol.NewProxy, ctx context.C
 		return err
 	}
 	log.Infof("newProxy with address:[%s]", hostPort)
-
+	err2 := p.AddProxy(conn, pxyName, listener)
+	if err2 != nil {
+		return err2
+	}
 	go func() {
 		defer func() {
 			log.Infof("proxy:[%s] exist", cmd.ProxyName)
@@ -157,7 +156,7 @@ func (p *Master) onNewProxy(conn net.Conn, cmd *protocol.NewProxy, ctx context.C
 				return
 			}
 			group, _ := errgroup.WithContext(ctx)
-			clientWorkConn, err := p.GetWorkConn()
+			clientWorkConn, err := p.GetWorkConn(cmd.ProxyName)
 			if err != nil {
 				log.Errorf("can not get work conn with err:[%+v]", err)
 				userconn.Close()
@@ -186,23 +185,19 @@ func (p *Master) onNewProxy(conn net.Conn, cmd *protocol.NewProxy, ctx context.C
 		}
 	}()
 
-	err2 := p.AddProxy(conn, pxyName, listener)
-	if err2 != nil {
-		return err2
-	}
 	res := protocol.Success()
 	p.writeChan <- res
 	return nil
 
 }
-func (p *Master) GetProxy(pxyName string) *proxy.TcpProxy {
+func (p *Master) GetProxy(pxyName string) (*proxy.TcpProxy, bool) {
 	p.proxyLock.RLock()
 	defer p.proxyLock.RUnlock()
 	if pxy, ok := p.RunningProxy[pxyName]; ok {
-		return pxy
+		return pxy, ok
 	}
 
-	return nil
+	return nil, false
 }
 func (p *Master) AddProxy(conn net.Conn, pxyName string, listener net.Listener) error {
 	p.proxyLock.Lock()
@@ -212,7 +207,7 @@ func (p *Master) AddProxy(conn net.Conn, pxyName string, listener net.Listener) 
 		return errors.New("proxy already exist")
 	}
 
-	p.RunningProxy[pxyName] = proxy.NewTcpProxy(pxyName, listener, conn)
+	p.RunningProxy[pxyName] = proxy.NewTcpProxy(pxyName, listener)
 	return nil
 }
 
@@ -224,10 +219,8 @@ func (p *Master) onCloseProxy(cmd *protocol.CloseProxy) error {
 	}
 	p.proxyLock.Lock()
 	defer p.proxyLock.Unlock()
-	err := pxy.Close()
-	if err != nil {
-		return err
-	}
+	pxy.Close()
+
 	delete(p.RunningProxy, cmd.ProxyName)
 	return nil
 }
@@ -236,7 +229,7 @@ func (p *Master) CloseAllProxy() error {
 
 	p.proxyLock.Lock()
 	for _, tcpProxy := range p.RunningProxy {
-		_ = tcpProxy.Close()
+		tcpProxy.Close()
 	}
 	defer p.proxyLock.Unlock()
 
@@ -244,20 +237,26 @@ func (p *Master) CloseAllProxy() error {
 }
 
 //应该在proxy manger 中
-func (p *Master) GetWorkConn() (net.Conn, error) {
+func (p *Master) GetWorkConn(pxyName string) (net.Conn, error) {
 	defer func() {
 		if err := recover(); err != nil {
 			log.Error("panic error: %v", err)
 			log.Error(string(debug.Stack()))
 		}
 	}()
+	pxy, ok := p.GetProxy(pxyName)
+	if !ok {
+		return nil, errors.New("proxy not found")
+	}
 
 	// get a work connection from the chan
 	for {
 		select {
-		case workConn := <-p.WorkingConn:
+		case workConn := <-pxy.WorkingChan:
 			log.Info("get work connection from chan")
-			p.writeChan <- &protocol.ReqWorkCtl{}
+			p.writeChan <- &protocol.ReqWorkCtl{
+				ProxyName: pxyName,
+			}
 			return workConn, nil
 		case <-time.After(time.Duration(5) * time.Second):
 			return nil, errors.New("timeout trying to get work connection")

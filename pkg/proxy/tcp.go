@@ -7,13 +7,18 @@ import (
 type TcpProxy struct {
 	Name string
 	net.Listener
-	CreateBy net.Conn
+	WorkingChan chan net.Conn
 }
 
-func NewTcpProxy(name string, listener net.Listener, CreateBy net.Conn) *TcpProxy {
+func NewTcpProxy(name string, listener net.Listener) *TcpProxy {
 	return &TcpProxy{
-		Name:     name,
-		Listener: listener,
-		CreateBy: CreateBy,
+		Name:        name,
+		Listener:    listener,
+		WorkingChan: make(chan net.Conn, 10),
 	}
+}
+
+func (t *TcpProxy) Close() {
+	t.Listener.Close()
+	close(t.WorkingChan)
 }
