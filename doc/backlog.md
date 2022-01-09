@@ -17,12 +17,11 @@
 
 ### TODO List
 - [x] 重构为Master,Worker 流程
-- [x] 构建Working Pool 
-- [ ] 优雅地判断conn是否关闭
-- [ ]使用pkg/errors
-   1. 应用程序中出现错误时，使用 errors.New  或者 errors.Errorf  返回错误
-   2. 调用应用程序的其他函数出现错误，请直接返回，如果需要携带信息，请使用 errors.WithMessage
-   3. 调用其他库（标准库、企业公共库、开源第三方库等）获取到错误时，请使用 errors.Wrap
-   4. 禁止每个出错的地方都打日志，只需要在进程的最开始的地方使用 %+v  进行统一打印
-- [ ]客户端多个proxy的问题
-
+- [x] 构建Working Pool
+- [ ] 支持http
+- [ ] 支持断线重连(心跳机制)
+- [ ] 统计信息->通过prometheus
+- [ ] KCP增强
+- [ ] Websocket 
+- [ ] 测试用例
+- [ ] 代码重构，目前不优雅

@@ -17,7 +17,6 @@ import (
 )
 
 type MasterManager struct {
-	//todo:使用sync.map
 	masterByTrackID sync.Map
 	masterNum       int64
 }
