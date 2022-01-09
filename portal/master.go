@@ -12,39 +12,48 @@ import (
 	"runtime/debug"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 type MasterManager struct {
-	masterByTrackID map[string]*Master
-
-	mu sync.RWMutex
+	//todo:使用sync.map
+	masterByTrackID sync.Map
+	masterNum       int64
 }
 
 func NewMasterManager() *MasterManager {
 	return &MasterManager{
-		masterByTrackID: make(map[string]*Master),
+		masterNum:       0,
+		masterByTrackID: sync.Map{},
 	}
 }
 
 func (m *MasterManager) AddMaster(master *Master) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.masterByTrackID[master.TrackID] = master
+	m.masterByTrackID.Store(master.TrackID, master)
+	atomic.AddInt64(&m.masterNum, 1)
+
 }
 
 func (m *MasterManager) DeleteMaster(traceID string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.masterByTrackID, traceID)
+	m.masterByTrackID.Delete(traceID)
+	atomic.AddInt64(&m.masterNum, -1)
+}
+func (s *MasterManager) GetMasterNum() int64 {
+	return atomic.LoadInt64(&s.masterNum)
+}
+func (m *MasterManager) GetMaster(traceID string) (*Master, bool) {
+	v, ok := m.masterByTrackID.Load(traceID)
+	if !ok {
+		return nil, ok
+	}
+	return v.(*Master), ok
+}
+func (m *MasterManager) Range(f func(traceId, master interface{}) bool) {
+	m.masterByTrackID.Range(f)
 }
 
-func (m *MasterManager) GetMaster(traceID string) *Master {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.masterByTrackID[traceID]
-}
-
+//Master 客户端和服务端的
 type Master struct {
 	TrackID           string
 	Conn              net.Conn
@@ -52,6 +61,7 @@ type Master struct {
 	readChan          chan interface{}
 	writeChan         chan protocol.Command
 	WorkingConnMaxCnt int
+
 	//对用户访问的代理
 	RunningProxy map[string]*proxy.TcpProxy
 
@@ -74,7 +84,7 @@ func NewMaster(TrackID string, Conn net.Conn) *Master {
 }
 
 //如何在Handler Message之中直到conn close?
-func (m *Master) HandlerMessage(ctx context.Context) error {
+func (m *Master) HandlerMessage(ctx context.Context, closeFn func(m *Master)) error {
 	defer func() {
 		log.Infof("exist handler message")
 	}()
@@ -89,11 +99,12 @@ func (m *Master) HandlerMessage(ctx context.Context) error {
 	egg.Go(func() error {
 		return m.writeMessage(ctx)
 	})
-	//TODO:fix bug，readMessage阻塞
+
 	err := egg.Wait()
 	if err != nil {
 		log.Errorf("%+v", err)
 		cancel()
+		closeFn(m)
 	}
 	return err
 }
@@ -153,7 +164,6 @@ func (p *Master) onNewProxy(conn net.Conn, cmd *protocol.NewProxy, ctx context.C
 				continue
 			}
 			log.Infof("get worker connection:[%s]", clientWorkConn.RemoteAddr())
-			//TODO:这个阻塞了
 			group.Go(func() error {
 				defer func() {
 					userconn.Close()
@@ -232,6 +242,8 @@ func (p *Master) CloseAllProxy() error {
 
 	return nil
 }
+
+//应该在proxy manger 中
 func (p *Master) GetWorkConn() (net.Conn, error) {
 	defer func() {
 		if err := recover(); err != nil {
@@ -263,11 +275,8 @@ func (m *Master) readMessage(ctx context.Context, cancel context.CancelFunc) err
 	}()
 
 	for {
-		//m.Conn.SetReadDeadline(time.Now().Add(time.Second * 5))
 
 		msg, err := protocol.ReadMsg(m.Conn)
-		//m.Conn.SetReadDeadline(time.Time{})
-
 		if err != nil {
 			log.Error(ctx.Value(TraceID), err)
 			if err == protocol.ErrMsgFormat {

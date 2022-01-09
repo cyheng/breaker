@@ -15,6 +15,9 @@ import (
 	"time"
 )
 
+//Portal 设计为接受新建master和worker的一个服务器
+//master:负责和客户端交互命令(eg:newProxy,CloseProxy),master能否重现成一个服务器
+//worker:客户端与portal的Conn
 type Portal struct {
 	masterManager *portal.MasterManager
 
@@ -60,7 +63,7 @@ func (p *Portal) Start(args interface{}, ctx context.Context) error {
 	}
 	p.listener = listener
 	log.Printf("listening TCP on %v", p.Addr())
-	egg, ctx := errgroup.WithContext(ctx)
+	egg, _ := errgroup.WithContext(ctx)
 
 	egg.Go(func() error {
 		var tempDelay time.Duration // how long to sleep on accept failure
@@ -89,6 +92,7 @@ func (p *Portal) Start(args interface{}, ctx context.Context) error {
 
 		}
 	})
+
 	return egg.Wait()
 }
 
@@ -121,10 +125,11 @@ func (p *Portal) onNewMaster(conn net.Conn, cmd *protocol.NewMaster, ctx context
 	traceID := ctx.Value(portal.TraceID).(string)
 	master := portal.NewMaster(traceID, conn)
 	log.Infof("add master[%s]", traceID)
-	//TODO:remove old master
 	p.masterManager.AddMaster(master)
-
-	go master.HandlerMessage(ctx)
+	//clean master when master exist
+	go master.HandlerMessage(ctx, func(m *portal.Master) {
+		p.masterManager.DeleteMaster(m.TrackID)
+	})
 
 	return protocol.WriteSuccessResponseWithData(conn, traceID)
 }
@@ -137,8 +142,8 @@ func (p *Portal) onNewWorkCtl(clientWorkConn net.Conn, cmd *protocol.WorkCtl) er
 	}()
 
 	log.Infof("get client working control:[%s],trace id:[%s]", clientWorkConn.RemoteAddr().String(), cmd.TraceID)
-	master := p.masterManager.GetMaster(cmd.TraceID)
-	if master == nil {
+	master, ok := p.masterManager.GetMaster(cmd.TraceID)
+	if !ok {
 		log.Errorf(" working control:[%s] error:master not found", clientWorkConn.RemoteAddr().String())
 		_ = protocol.WriteErrResponse(clientWorkConn, "master not found")
 		return errors.New("master not found")
