@@ -154,32 +154,34 @@ func (p *Master) onNewProxy(conn net.Conn, cmd *protocol.NewProxy, ctx context.C
 				listener.Close()
 				return
 			}
-			group, _ := errgroup.WithContext(ctx)
-			clientWorkConn, err := p.GetWorkConn(cmd.ProxyName)
-			if err != nil {
-				log.Errorf("can not get work conn with err:[%+v]", err)
-				userconn.Close()
-				continue
-			}
-			log.Infof("get worker connection:[%s]", clientWorkConn.RemoteAddr())
-			group.Go(func() error {
-				defer func() {
+			go func() {
+				group, _ := errgroup.WithContext(ctx)
+				clientWorkConn, err := p.GetWorkConn(cmd.ProxyName)
+				if err != nil {
+					log.Errorf("can not get work conn with err:[%+v]", err)
 					userconn.Close()
-				}()
-				_, err := io.Copy(userconn, clientWorkConn)
-				return err
-			})
-			group.Go(func() error {
-				defer func() {
-					clientWorkConn.Close()
-				}()
-				_, err := io.Copy(clientWorkConn, userconn)
-				return err
-			})
-			err = group.Wait()
-			if err != nil {
-				log.Error(err)
-			}
+					return
+				}
+				log.Infof("get worker connection:[%s]", clientWorkConn.RemoteAddr())
+				group.Go(func() error {
+					defer func() {
+						userconn.Close()
+					}()
+					_, err := io.Copy(userconn, clientWorkConn)
+					return err
+				})
+				group.Go(func() error {
+					defer func() {
+						clientWorkConn.Close()
+					}()
+					_, err := io.Copy(clientWorkConn, userconn)
+					return err
+				})
+				err = group.Wait()
+				if err != nil {
+					log.Error(err)
+				}
+			}()
 
 		}
 	}()

@@ -18,10 +18,10 @@
 ### TODO List
 - [x] 重构为Master,Worker 流程
 - [x] 构建Working Pool
+- [x] 莫名其妙断掉的问题->proxy conn 阻塞
 - [ ] 支持http
 - [ ] 支持断线重连(心跳机制)
 - [ ] 统计信息->通过prometheus
 - [ ] KCP增强
 - [ ] Websocket 
-- [ ] 测试用例
 - [ ] 代码重构，目前不优雅
