@@ -6,12 +6,15 @@
 4. 统计流量(流量就是字节数)
 5. 可靠udp？
 6. 支持http反向代理
+
 ~~7. 通过init函数注册factory~~
 8. 协议
     * 消息类型,1byte
     * 长度,int64
     * 消息body
-
+9. 交互模型，参考了frp和nps，最终选择了frp的参考模型
+   * frp模型,创建了proxy之后，服务端就发了几个指令要求连接(client dial server),加入到worker pool中
+   * nps模型，创建了proxy之后，服务端dial client
 
 
 
