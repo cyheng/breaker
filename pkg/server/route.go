@@ -28,6 +28,10 @@ type Router struct {
 	notFoundHandler HandlerFunc
 }
 
+func (r *Router) handleRequest(ctx Context) {
+
+}
+
 func NewRouter() *Router {
 	return &Router{
 		handlerMapper:     make(map[interface{}]HandlerFunc),

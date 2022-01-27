@@ -21,11 +21,9 @@ func NewDefaultPacker() *DefaultPacker {
 }
 
 func (p *DefaultPacker) Pack(cmd protocol.Command) ([]byte, error) {
-	//TODO implement me
-	panic("implement me")
+	return protocol.CmdToBytes(cmd)
 }
 
 func (p *DefaultPacker) Unpack(reader io.Reader) (protocol.Command, error) {
-	//TODO implement me
-	panic("implement me")
+	return protocol.ReadMsg(reader)
 }

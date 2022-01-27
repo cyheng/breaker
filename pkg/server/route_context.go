@@ -4,11 +4,13 @@ import (
 	"breaker/pkg/protocol"
 	"context"
 	"sync"
+	"time"
 )
 
 // Context is a generic context in a message routing.
 // It allows us to pass variables between handler and middlewares.
 type Context interface {
+	context.Context
 	// WithContext sets the underline context.
 	// It's very useful to control the workflow when send to response channel.
 	WithContext(ctx context.Context) Context
@@ -22,13 +24,6 @@ type Context interface {
 	// Request returns request message entry.
 	Request() protocol.Command
 
-	// SetRequest encodes data with session's codec and sets request message entry.
-	SetRequest(id, data interface{}) error
-
-	// MustSetRequest encodes data with session's codec and sets request message entry.
-	// panics on error.
-	MustSetRequest(id, data interface{}) Context
-
 	// SetRequestMessage sets request message entry directly.
 	SetRequestMessage(cmd protocol.Command) Context
 
@@ -37,13 +32,6 @@ type Context interface {
 
 	// Response returns the response message entry.
 	Response() protocol.Command
-
-	// SetResponse encodes data with session's codec and sets response message entry.
-	SetResponse(id, data interface{}) error
-
-	// MustSetResponse encodes data with session's codec and sets response message entry.
-	// panics on error.
-	MustSetResponse(id, data interface{}) Context
 
 	// SetResponseMessage sets response message entry directly.
 	SetResponseMessage(cmd protocol.Command) Context
@@ -62,9 +50,6 @@ type Context interface {
 
 	// Remove deletes the key from storage.
 	Remove(key string)
-
-	// Copy returns a copy of Context.
-	Copy() Context
 }
 
 func NewContext() *routeContext {
@@ -75,47 +60,55 @@ func NewContext() *routeContext {
 
 // routeContext implements the Context interface.
 type routeContext struct {
-	rawCtx    context.Context
-	mu        sync.RWMutex
-	storage   map[string]interface{}
+	rawCtx context.Context
+
+	storage   sync.Map
 	session   Session
 	reqEntry  protocol.Command
 	respEntry protocol.Command
 }
 
+func (r *routeContext) Deadline() (deadline time.Time, ok bool) {
+	return r.rawCtx.Deadline()
+}
+
+func (r *routeContext) Done() <-chan struct{} {
+	return r.rawCtx.Done()
+}
+
+func (r *routeContext) Err() error {
+	return r.rawCtx.Err()
+}
+
+func (r *routeContext) Value(key interface{}) interface{} {
+	if keyAsString, ok := key.(string); ok {
+		val, _ := r.Get(keyAsString)
+		return val
+	}
+	return nil
+}
+
 func (r *routeContext) WithContext(ctx context.Context) Context {
-	//TODO implement me
-	panic("implement me")
+	r.rawCtx = ctx
+	return r
 }
 
 func (r *routeContext) Session() Session {
-	//TODO implement me
-	panic("implement me")
+	return r.session
 }
 
 func (r *routeContext) SetSession(sess Session) Context {
-	//TODO implement me
-	panic("implement me")
+	r.session = sess
+	return r
 }
 
 func (r *routeContext) Request() protocol.Command {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (r *routeContext) SetRequest(id, data interface{}) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (r *routeContext) MustSetRequest(id, data interface{}) Context {
-	//TODO implement me
-	panic("implement me")
+	return r.reqEntry
 }
 
 func (r *routeContext) SetRequestMessage(cmd protocol.Command) Context {
-	//TODO implement me
-	panic("implement me")
+	r.reqEntry = cmd
+	return r
 }
 
 func (r *routeContext) Bind(v interface{}) error {
@@ -124,51 +117,38 @@ func (r *routeContext) Bind(v interface{}) error {
 }
 
 func (r *routeContext) Response() protocol.Command {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (r *routeContext) SetResponse(id, data interface{}) error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (r *routeContext) MustSetResponse(id, data interface{}) Context {
-	//TODO implement me
-	panic("implement me")
+	return r.respEntry
 }
 
 func (r *routeContext) SetResponseMessage(cmd protocol.Command) Context {
-	//TODO implement me
-	panic("implement me")
+	r.respEntry = cmd
+	return r
 }
 
 func (r *routeContext) Send() bool {
-	//TODO implement me
-	panic("implement me")
+	return r.session.Send(r)
 }
 
 func (r *routeContext) SendTo(session Session) bool {
-	//TODO implement me
-	panic("implement me")
+	return session.Send(r)
 }
 
 func (r *routeContext) Get(key string) (value interface{}, exists bool) {
-	//TODO implement me
-	panic("implement me")
+	return r.storage.Load(key)
 }
 
 func (r *routeContext) Set(key string, value interface{}) {
-	//TODO implement me
-	panic("implement me")
+	r.storage.Store(key, value)
 }
 
 func (r *routeContext) Remove(key string) {
-	//TODO implement me
-	panic("implement me")
+	r.storage.Delete(key)
 }
 
-func (r *routeContext) Copy() Context {
-	//TODO implement me
-	panic("implement me")
+func (r *routeContext) reset() {
+	r.rawCtx = context.Background()
+	r.session = nil
+	r.reqEntry = nil
+	r.respEntry = nil
+	r.storage = sync.Map{}
 }

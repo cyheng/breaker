@@ -104,20 +104,26 @@ func ReadMsg(c io.Reader) (msg Command, err error) {
 	err = json.Unmarshal(buffer, &msg)
 	return
 }
-func WriteMsg(c io.Writer, msg Command) (err error) {
+func CmdToBytes(msg Command) ([]byte, error) {
 	typeByte := msg.Type()
 
 	content, err := json.Marshal(msg)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	buffer := bytes.NewBuffer(nil)
 	buffer.WriteByte(typeByte)
 	_ = binary.Write(buffer, binary.BigEndian, int64(len(content)))
 	buffer.Write(content)
-
-	if _, err = c.Write(buffer.Bytes()); err != nil {
+	return buffer.Bytes(), nil
+}
+func WriteMsg(c io.Writer, msg Command) (err error) {
+	buf, err := CmdToBytes(msg)
+	if err != nil {
+		return err
+	}
+	if _, err = c.Write(buf); err != nil {
 		return
 	}
 	return nil
