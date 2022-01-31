@@ -208,7 +208,7 @@ func (p *Master) AddProxy(conn net.Conn, pxyName string, listener net.Listener) 
 		return errors.New("proxy already exist")
 	}
 
-	p.RunningProxy[pxyName] = proxy.NewTcpProxy(pxyName, listener)
+	//p.RunningProxy[pxyName] = proxy.NewTcpProxy(pxyName, listener)
 	return nil
 }
 

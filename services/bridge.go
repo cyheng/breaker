@@ -75,7 +75,7 @@ func (b *Bridge) Start(args interface{}, ctx context.Context) error {
 		ProxyName:  b.ProxyName,
 	}
 	b.msgWriteChan <- newProxy
-
+	log.Infof("send new proxy:%s :%d", b.ProxyName, b.RemotePort)
 	ctx, cancel := context.WithCancel(ctx)
 	egg, _ := errgroup.WithContext(ctx)
 	egg.Go(func() error {

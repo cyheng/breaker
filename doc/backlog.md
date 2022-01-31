@@ -28,3 +28,6 @@
 - [ ] KCP增强
 - [ ] Websocket 
 - [ ] 代码重构，目前不优雅
+  * 添加session对象，让working连接添加到master session中
+  * 实现middleware
+  * 实现router

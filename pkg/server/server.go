@@ -11,8 +11,9 @@ import (
 var ErrServerStopped = errors.New("server stopped")
 
 const (
-	tempErrDelay = time.Millisecond * 5
-	QueueSize    = 1024
+	tempErrDelay             = time.Millisecond * 5
+	QueueSize                = 1024
+	DefaultWriteAttemptTimes = 1
 )
 
 type Server struct {
@@ -39,21 +40,22 @@ type Server struct {
 	writeAttemptTimes     int
 }
 
-func NewServer(listener net.Listener, opts ...Option) *Server {
+func NewServer(opts ...Option) *Server {
 	srv := &Server{
-		listener:      listener,
-		stopped:       make(chan struct{}),
-		Packer:        NewDefaultPacker(),
-		Codec:         NewDefaultCodec(),
-		router:        NewRouter(),
-		respQueueSize: QueueSize,
+
+		stopped:           make(chan struct{}),
+		Packer:            NewDefaultPacker(),
+		Codec:             NewDefaultCodec(),
+		router:            NewRouter(),
+		respQueueSize:     QueueSize,
+		writeAttemptTimes: DefaultWriteAttemptTimes,
 	}
 	for _, opt := range opts {
 		opt(srv)
 	}
 	return srv
 }
-func (s *Server) ServeTcp(addr string) error {
+func (s *Server) Serve(addr string) error {
 	address, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
 		return err
@@ -63,7 +65,7 @@ func (s *Server) ServeTcp(addr string) error {
 		return err
 	}
 	s.listener = lis
-
+	log.Infof("start tcp server:" + addr)
 	return s.acceptLoop()
 }
 
@@ -132,6 +134,25 @@ func (s *Server) handleConn(conn net.Conn) {
 	if s.OnSessionClose != nil {
 		go s.OnSessionClose(session)
 	}
+}
+func (s *Server) AddRoute(msgID byte, handler HandlerFunc, middlewares ...MiddlewareFunc) {
+	s.router.register(msgID, handler, middlewares...)
+}
+
+// Use registers global middlewares to the router.
+func (s *Server) Use(middlewares ...MiddlewareFunc) {
+	s.router.registerMiddleware(middlewares...)
+}
+
+// NotFoundHandler sets the not-found handler for router.
+func (s *Server) NotFoundHandler(handler HandlerFunc) {
+	s.router.setNotFoundHandler(handler)
+}
+
+// Stop stops server. Closing Listener and all connections.
+func (s *Server) Stop() error {
+	close(s.stopped)
+	return s.listener.Close()
 }
 
 type Option func(*Server)

@@ -27,10 +27,14 @@ type Session interface {
 
 	// AllocateContext gets a Context ships with current session.
 	AllocateContext() Context
+
+	Conn() net.Conn
+
+	SendSync(context Context) bool
 }
 
 type TcpSession struct {
-	id        string        // session's ID.
+	id        interface{}   // session's ID.
 	conn      net.Conn      // tcp connection
 	closed    chan struct{} // to close()
 	closeOnce sync.Once     // ensure one session only close once
@@ -38,6 +42,10 @@ type TcpSession struct {
 	packer    Packer        // to pack and unpack message
 	codec     Codec         // encode/decode message data
 	ctxPool   sync.Pool     // router context pool
+}
+
+func (s *TcpSession) Conn() net.Conn {
+	return s.conn
 }
 
 type SessionOpt func(*TcpSession)
@@ -57,13 +65,11 @@ func NewTcpSession(conn net.Conn, ops ...SessionOpt) *TcpSession {
 }
 
 func (s *TcpSession) ID() interface{} {
-	//TODO implement me
-	panic("implement me")
+	return s.id
 }
 
 func (s *TcpSession) SetID(id interface{}) {
-	//TODO implement me
-	panic("implement me")
+	s.id = id
 }
 
 func (s *TcpSession) Send(ctx Context) bool {
@@ -77,14 +83,35 @@ func (s *TcpSession) Send(ctx Context) bool {
 	}
 }
 
+func (s *TcpSession) SendSync(ctx Context) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-s.closed:
+		return false
+	default:
+	}
+	outboundMsg, err := s.packResponse(ctx)
+	if err != nil {
+		log.Errorf("session %s pack outbound message err: %s", s.id, err)
+		return false
+	}
+	if outboundMsg == nil {
+		return false
+	}
+	if err := s.attemptConnWrite(outboundMsg, 1); err != nil {
+		log.Errorf("session %s conn write err: %s", s.id, err)
+		return false
+	}
+	return true
+}
+
 func (s *TcpSession) Codec() Codec {
-	//TODO implement me
-	panic("implement me")
+	return s.codec
 }
 
 func (s *TcpSession) Close() {
-	//TODO implement me
-	panic("implement me")
+	s.closeOnce.Do(func() { close(s.closed) })
 }
 
 func (s *TcpSession) AllocateContext() Context {
@@ -128,6 +155,7 @@ func (s *TcpSession) writeOutbound(timeout time.Duration, times int) {
 		select {
 		case <-s.closed:
 			return
+
 		case ctx = <-s.respQueue:
 		}
 

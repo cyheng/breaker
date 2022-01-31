@@ -3,6 +3,7 @@ package server
 import (
 	"breaker/pkg/protocol"
 	"context"
+	"net"
 	"sync"
 	"time"
 )
@@ -39,6 +40,7 @@ type Context interface {
 	// Send sends itself to current session.
 	Send() bool
 
+	SendSync() bool
 	// SendTo sends itself to session.
 	SendTo(session Session) bool
 
@@ -50,6 +52,8 @@ type Context interface {
 
 	// Remove deletes the key from storage.
 	Remove(key string)
+
+	Conn() net.Conn
 }
 
 func NewContext() *routeContext {
@@ -128,6 +132,9 @@ func (r *routeContext) SetResponseMessage(cmd protocol.Command) Context {
 func (r *routeContext) Send() bool {
 	return r.session.Send(r)
 }
+func (r *routeContext) SendSync() bool {
+	return r.session.SendSync(r)
+}
 
 func (r *routeContext) SendTo(session Session) bool {
 	return session.Send(r)
@@ -144,7 +151,9 @@ func (r *routeContext) Set(key string, value interface{}) {
 func (r *routeContext) Remove(key string) {
 	r.storage.Delete(key)
 }
-
+func (r *routeContext) Conn() net.Conn {
+	return r.session.Conn()
+}
 func (r *routeContext) reset() {
 	r.rawCtx = context.Background()
 	r.session = nil
