@@ -7,6 +7,7 @@ import (
 	"errors"
 	log "github.com/sirupsen/logrus"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -15,6 +16,7 @@ type TcpProxy struct {
 	net.Listener
 	WorkingChan chan net.Conn
 	ctx         breaker.Context
+	closeOnce   sync.Once
 }
 
 func NewTcpProxy(name string, ctx breaker.Context) *TcpProxy {
@@ -51,8 +53,7 @@ func (t *TcpProxy) Serve(addr string) error {
 					time.Sleep(tempDelay)
 					continue
 				}
-				log.Infof("met pxy accept error: %s", err)
-				userconn.Close()
+				log.Errorf("met pxy accept error: %s", err)
 				return
 			}
 			go func() {
@@ -89,6 +90,13 @@ func (t *TcpProxy) GetWorkConn() (net.Conn, error) {
 }
 
 func (t *TcpProxy) Close() {
-	t.Listener.Close()
-	close(t.WorkingChan)
+	t.closeOnce.Do(func() {
+		t.Listener.Close()
+		close(t.WorkingChan)
+		for workConn := range t.WorkingChan {
+			workConn.Close()
+		}
+
+	})
+
 }

@@ -13,18 +13,17 @@ import (
 var ErrClientStopped = errors.New("client stopped")
 
 type Client struct {
-	Conf       *feature.BridgeConfig
-	MasterConn *MasterConn
-	// Packer is the message packer, will be passed to session.
+	Conf *feature.BridgeConfig
+	// Packer is the message packer, will be passed to Session.
 	Packer Packer
 
-	// Codec is the message codec, will be passed to session.
+	// Codec is the message codec, will be passed to Session.
 	Codec Codec
 
-	// OnSessionCreate is an event hook, will be invoked when session's created.
+	// OnSessionCreate is an event hook, will be invoked when Session's created.
 	OnSessionCreate func(sess Session)
 
-	// OnSessionClose is an event hook, will be invoked when session's closed.
+	// OnSessionClose is an event hook, will be invoked when Session's closed.
 	OnSessionClose func(sess Session)
 
 	socketReadBufferSize  int
@@ -35,7 +34,7 @@ type Client struct {
 	router                *Router
 	stopped               chan struct{}
 	writeAttemptTimes     int
-	session               *TcpSession
+	Session               *TcpSession
 }
 
 func NewClient(opts ...ClientOption) *Client {
@@ -84,7 +83,7 @@ func (s *Client) IsStopped() bool {
 }
 
 func (s *Client) handleSession() {
-	session := s.session
+	session := s.Session
 	if s.OnSessionCreate != nil {
 		go s.OnSessionCreate(session)
 	}
@@ -93,7 +92,7 @@ func (s *Client) handleSession() {
 	go session.writeOutbound(s.writeTimeout, s.writeAttemptTimes) // start writing message packet to connection.
 
 	select {
-	case <-session.closed: // wait for session finished.
+	case <-session.closed: // wait for Session finished.
 	case <-s.stopped: // or the client is stopped.
 	}
 
@@ -118,18 +117,24 @@ func (s *Client) NotFoundHandler(handler HandlerFunc) {
 // Stop stops client. Closing Listener and all connections.
 func (s *Client) Stop() error {
 	close(s.stopped)
-	return s.MasterConn.Close()
+	s.Session.Close()
+	return nil
 }
 
 func (s *Client) login(c net.Conn) error {
-	s.MasterConn = &MasterConn{
+	conn := &MasterConn{
 		Conn: c,
 	}
-	err := s.MasterConn.SendCmdSync(&protocol.NewMaster{})
+	session := NewTcpSession(conn,
+		AsCodec(s.Codec),
+		AsPacker(s.Packer),
+		AsQueueSize(s.respQueueSize),
+	)
+	err := session.SendCmdSync(&protocol.NewMaster{})
 	if err != nil {
 		return err
 	}
-	cmdSync, err := s.MasterConn.ReadCmdSync()
+	cmdSync, err := session.ReadCmdSync()
 	if err != nil {
 		return err
 	}
@@ -141,15 +146,12 @@ func (s *Client) login(c net.Conn) error {
 		return fmt.Errorf(resp.Error)
 	}
 
-	traceId := resp.TraceID
+	sessionId := resp.SessionId
 
-	s.MasterConn.TraceId = traceId
-	session := NewTcpSession(c,
-		AsCodec(s.Codec),
-		AsPacker(s.Packer),
-		AsQueueSize(s.respQueueSize),
-	)
-	s.session = session
+	log.Infof("login success,get Session id :[%s]", sessionId)
+
+	session.SetID(sessionId)
+	s.Session = session
 	go s.handleSession()
 	return nil
 }
@@ -162,25 +164,25 @@ func (s *Client) Start() error {
 	//server:listen remote port(create server proxy)
 	//client:dial local port,client:send worker(3)(create client proxy)
 	//server proxy close
-	context := s.session.AllocateContext()
+	context := s.Session.AllocateContext()
 	context.SetResponseMessage(&protocol.NewProxy{
 		ProxyName:  s.Conf.ProxyName,
 		RemotePort: s.Conf.RemotePort,
-		TraceId:    s.session.id.(string),
+		TraceId:    s.Session.id.(string),
 	})
-	s.session.Send(context)
+	s.Session.Send(context)
 	//todo: heartbeat,check server available
 	select {}
 	return nil
 }
-func (s *Client) CreateWorkerConn(ctx Context) (net.Conn, error) {
+func (s *Client) CreateWorkerConn() (net.Conn, error) {
 	//send worker
-	sessionId := ctx.Session().ID().(string)
+	sessionId := s.Session.ID().(string)
 	workCmd := &protocol.NewWorkCtl{
 		TraceID:   sessionId,
 		ProxyName: s.Conf.ProxyName,
 	}
-	log.Infof("send message:[workCtl],session id:[%s]", sessionId)
+	log.Infof("send message:[workCtl],Session id:[%s]", sessionId)
 	log.Info("dial working server tcp:", s.Conf.ServerAddr)
 	workerConn, err := net.Dial("tcp", s.Conf.ServerAddr)
 	if err != nil {

@@ -142,7 +142,7 @@ package services
 //		return errors.New("pxy not found")
 //	}
 //	workCtl := &protocol.NewWorkCtl{
-//		TraceID:   b.traceId,
+//		SessionId:   b.traceId,
 //		ProxyName: pxy,
 //	}
 //	log.Infof("send message:[workCtl]")

@@ -69,15 +69,26 @@ func NewPortalService(conf *feature.PortalConfig) *breaker.Server {
 	pm := &proxy.ProxyManager{
 		RunningProxy: make(map[string]*proxy.TcpProxy),
 	}
-
+	srv.OnSessionClose = func(sess breaker.Session) {
+		sessid := sess.ID().(string)
+		err := masterManager.DeleteMaster(sessid)
+		if err == nil {
+			log.Infof("close master with session id:[%s]", sessid)
+		}
+		err = pm.DeleteProxy(sessid)
+		if err == nil {
+			log.Infof("close proxy with session id:[%s]", sessid)
+		}
+	}
 	srv.Use(breaker.RecoverMiddleware())
 	srv.AddRoute(&protocol.NewMaster{}, func(ctx breaker.Context) {
 		conn := ctx.Conn()
-		traceID := ctx.Session().ID().(string)
-		master := portal.NewMaster(traceID, conn)
+		sessid := ctx.Session().ID().(string)
+		master := portal.NewMaster(sessid, conn)
 		masterManager.AddMaster(master)
+		log.Infof("new master with session id :[%s]", sessid)
 		ctx.SetResponseMessage(&protocol.NewMasterResp{
-			TraceID: traceID,
+			SessionId: sessid,
 		})
 	})
 	srv.AddRoute(&protocol.NewWorkCtl{}, func(ctx breaker.Context) {

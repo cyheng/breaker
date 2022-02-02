@@ -66,7 +66,8 @@ func NewBridge(conf *feature.BridgeConfig) *breaker.Client {
 	cli.Use(breaker.RecoverMiddleware())
 
 	cli.AddRoute(&protocol.NewProxyResp{}, func(ctx breaker.Context) {
-		workerConn, err := cli.CreateWorkerConn(ctx)
+		log.Infof("get message NewProxyResp,session id :[%s]", ctx.Session().ID())
+		workerConn, err := cli.CreateWorkerConn()
 		if err != nil {
 			log.Errorf(err.Error())
 			return
@@ -86,7 +87,7 @@ func NewBridge(conf *feature.BridgeConfig) *breaker.Client {
 
 	})
 	cli.AddRoute(&protocol.ReqWorkCtl{}, func(ctx breaker.Context) {
-		workerConn, err := cli.CreateWorkerConn(ctx)
+		workerConn, err := cli.CreateWorkerConn()
 		if err != nil {
 			log.Errorf(err.Error())
 			return

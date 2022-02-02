@@ -8,8 +8,7 @@ import (
 
 //MasterConn use for client,each breaker client has its owen MasterConn
 type MasterConn struct {
-	Conn    net.Conn
-	TraceId string
+	Conn net.Conn
 }
 
 func (m *MasterConn) Read(b []byte) (n int, err error) {

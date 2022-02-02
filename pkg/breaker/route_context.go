@@ -16,10 +16,10 @@ type Context interface {
 	// It's very useful to control the workflow when send to response channel.
 	WithContext(ctx context.Context) Context
 
-	// Session returns the current session.
+	// Session returns the current Session.
 	Session() Session
 
-	// SetSession sets session.
+	// SetSession sets Session.
 	SetSession(sess Session) Context
 
 	// Request returns request message entry.
@@ -37,11 +37,11 @@ type Context interface {
 	// SetResponseMessage sets response message entry directly.
 	SetResponseMessage(cmd protocol.Command) Context
 
-	// Send sends itself to current session.
+	// Send sends itself to current Session.
 	Send() bool
 
 	SendSync() bool
-	// SendTo sends itself to session.
+	// SendTo sends itself to Session.
 	SendTo(session Session) bool
 
 	// Get returns key value from storage.

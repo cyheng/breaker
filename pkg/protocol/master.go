@@ -9,7 +9,7 @@ func (n *NewMaster) Type() byte {
 
 type NewMasterResp struct {
 	Resp
-	TraceID string
+	SessionId string
 }
 
 func (n *NewMasterResp) Type() byte {

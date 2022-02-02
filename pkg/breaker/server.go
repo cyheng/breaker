@@ -19,16 +19,16 @@ const (
 
 type Server struct {
 	listener net.Listener
-	// Packer is the message packer, will be passed to session.
+	// Packer is the message packer, will be passed to Session.
 	Packer Packer
 
-	// Codec is the message codec, will be passed to session.
+	// Codec is the message codec, will be passed to Session.
 	Codec Codec
 
-	// OnSessionCreate is an event hook, will be invoked when session's created.
+	// OnSessionCreate is an event hook, will be invoked when Session's created.
 	OnSessionCreate func(sess Session)
 
-	// OnSessionClose is an event hook, will be invoked when session's closed.
+	// OnSessionClose is an event hook, will be invoked when Session's closed.
 	OnSessionClose func(sess Session)
 
 	socketReadBufferSize  int
@@ -115,7 +115,8 @@ func (s *Server) IsStopped() bool {
 }
 
 func (s *Server) handleConn(conn net.Conn) {
-	session := NewTcpSession(conn,
+	c := &MasterConn{Conn: conn}
+	session := NewTcpSession(c,
 		AsCodec(s.Codec),
 		AsPacker(s.Packer),
 		AsQueueSize(s.respQueueSize),
@@ -128,7 +129,7 @@ func (s *Server) handleConn(conn net.Conn) {
 	go session.writeOutbound(s.writeTimeout, s.writeAttemptTimes) // start writing message packet to connection.
 
 	select {
-	case <-session.closed: // wait for session finished.
+	case <-session.closed: // wait for Session finished.
 	case <-s.stopped: // or the breaker is stopped.
 	}
 

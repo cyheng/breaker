@@ -2,6 +2,7 @@ package portal
 
 import (
 	"breaker/pkg/protocol"
+	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -25,9 +26,16 @@ func (m *MasterManager) AddMaster(master *Master) {
 
 }
 
-func (m *MasterManager) DeleteMaster(traceID string) {
+func (m *MasterManager) DeleteMaster(traceID string) error {
+	v, ok := m.masterByTrackID.Load(traceID)
+	if !ok {
+		return fmt.Errorf("session id:[%s] not found in master", traceID)
+	}
+	master := v.(*Master)
+	master.Close()
 	m.masterByTrackID.Delete(traceID)
 	atomic.AddInt64(&m.masterNum, -1)
+	return nil
 }
 func (s *MasterManager) GetMasterNum() int64 {
 	return atomic.LoadInt64(&s.masterNum)
@@ -45,14 +53,10 @@ func (m *MasterManager) Range(f func(traceId, master interface{}) bool) {
 
 //Master 客户端和服务端的
 type Master struct {
-	TrackID string
-	Conn    net.Conn
-
-	readChan          chan interface{}
-	writeChan         chan protocol.Command
-	WorkingConnMaxCnt int
-
-	proxyLock sync.RWMutex
+	TrackID   string
+	Conn      net.Conn
+	readChan  chan interface{}
+	writeChan chan protocol.Command
 	once      sync.Once
 }
 

@@ -10,10 +10,10 @@ import (
 )
 
 type Session interface {
-	// ID returns current session's id.
+	// ID returns current Session's id.
 	ID() interface{}
 
-	// SetID sets current session's id.
+	// SetID sets current Session's id.
 	SetID(id interface{})
 
 	// Send sends the ctx to the respQueue.
@@ -22,10 +22,10 @@ type Session interface {
 	// Codec returns the codec, can be nil.
 	Codec() Codec
 
-	// Close closes current session.
+	// Close closes current Session.
 	Close()
 
-	// AllocateContext gets a Context ships with current session.
+	// AllocateContext gets a Context ships with current Session.
 	AllocateContext() Context
 
 	Conn() net.Conn
@@ -34,10 +34,11 @@ type Session interface {
 }
 
 type TcpSession struct {
-	id        interface{}   // session's ID.
-	conn      net.Conn      // tcp connection
+	id   interface{} // Session's ID.
+	conn *MasterConn
+	// tcp connection
 	closed    chan struct{} // to close()
-	closeOnce sync.Once     // ensure one session only close once
+	closeOnce sync.Once     // ensure one Session only close once
 	respQueue chan Context  // response queue channel, pushed in Send() and popped in writeOutbound()
 	packer    Packer        // to pack and unpack message
 	codec     Codec         // encode/decode message data
@@ -50,7 +51,7 @@ func (s *TcpSession) Conn() net.Conn {
 
 type SessionOpt func(*TcpSession)
 
-func NewTcpSession(conn net.Conn, ops ...SessionOpt) *TcpSession {
+func NewTcpSession(conn *MasterConn, ops ...SessionOpt) *TcpSession {
 	var session = &TcpSession{
 		id:        uuid.New().String(),
 		conn:      conn,
@@ -96,14 +97,14 @@ func (s *TcpSession) SendSync(ctx Context) bool {
 	}
 	outboundMsg, err := s.packResponse(ctx)
 	if err != nil {
-		log.Errorf("session %s pack outbound message err: %s", s.id, err)
+		log.Errorf("Session %s pack outbound message err: %s", s.id, err)
 		return false
 	}
 	if outboundMsg == nil {
 		return false
 	}
 	if err := s.attemptConnWrite(outboundMsg, 1); err != nil {
-		log.Errorf("session %s conn write err: %s", s.id, err)
+		log.Errorf("Session %s conn write err: %s", s.id, err)
 		return false
 	}
 	return true
@@ -114,7 +115,9 @@ func (s *TcpSession) Codec() Codec {
 }
 
 func (s *TcpSession) Close() {
-	s.closeOnce.Do(func() { close(s.closed) })
+	s.closeOnce.Do(func() {
+		close(s.closed)
+	})
 }
 
 func (s *TcpSession) AllocateContext() Context {
@@ -133,13 +136,13 @@ func (s *TcpSession) readInbound(router *Router, timeout time.Duration) {
 		}
 		if timeout > 0 {
 			if err := s.conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
-				log.Errorf("session %s set read deadline err: %s", s.id, err)
+				log.Errorf("Session %s set read deadline err: %s", s.id, err)
 				break
 			}
 		}
 		reqEntry, err := s.packer.Unpack(s.conn)
 		if err != nil {
-			log.Errorf("session %s unpack inbound packet err: %s", s.id, err)
+			log.Errorf("Session %s unpack inbound packet err: %s", s.id, err)
 			break
 		}
 		if reqEntry == nil {
@@ -148,7 +151,7 @@ func (s *TcpSession) readInbound(router *Router, timeout time.Duration) {
 
 		s.handleReq(router, reqEntry)
 	}
-	log.Tracef("session %s readInbound exit because of error", s.id)
+	log.Tracef("Session %s readInbound exit because of error", s.id)
 	s.Close()
 }
 
@@ -164,7 +167,7 @@ func (s *TcpSession) writeOutbound(timeout time.Duration, times int) {
 
 		outboundMsg, err := s.packResponse(ctx)
 		if err != nil {
-			log.Errorf("session %s pack outbound message err: %s", s.id, err)
+			log.Errorf("Session %s pack outbound message err: %s", s.id, err)
 			continue
 		}
 		if outboundMsg == nil {
@@ -173,18 +176,18 @@ func (s *TcpSession) writeOutbound(timeout time.Duration, times int) {
 
 		if timeout > 0 {
 			if err := s.conn.SetWriteDeadline(time.Now().Add(timeout)); err != nil {
-				log.Errorf("session %s set write deadline err: %s", s.id, err)
+				log.Errorf("Session %s set write deadline err: %s", s.id, err)
 				break
 			}
 		}
 
 		if err := s.attemptConnWrite(outboundMsg, times); err != nil {
-			log.Errorf("session %s conn write err: %s", s.id, err)
+			log.Errorf("Session %s conn write err: %s", s.id, err)
 			break
 		}
 	}
 	s.Close()
-	log.Tracef("session %s writeOutbound exit because of error", s.id)
+	log.Tracef("Session %s writeOutbound exit because of error", s.id)
 }
 
 func (s *TcpSession) handleReq(router *Router, entry protocol.Command) {
@@ -212,7 +215,7 @@ func (s *TcpSession) attemptConnWrite(outboundMsg []byte, attemptTimes int) (err
 			break
 		}
 		if ne.Temporary() {
-			log.Errorf("session %s conn write err: %s; retrying in %s", s.id, err, tempErrDelay*time.Duration(i+1))
+			log.Errorf("Session %s conn write err: %s; retrying in %s", s.id, err, tempErrDelay*time.Duration(i+1))
 			continue
 		}
 		break // if err is not temporary, break the loop.
@@ -226,6 +229,14 @@ func (s *TcpSession) packResponse(ctx Context) ([]byte, error) {
 		return nil, nil
 	}
 	return s.packer.Pack(ctx.Response())
+}
+
+func (s *TcpSession) SendCmdSync(cmd protocol.Command) error {
+	return s.conn.SendCmdSync(cmd)
+}
+
+func (s *TcpSession) ReadCmdSync() (protocol.Command, error) {
+	return s.conn.ReadCmdSync()
 }
 
 func AsPacker(packer Packer) SessionOpt {
