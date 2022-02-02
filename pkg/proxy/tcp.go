@@ -1,9 +1,9 @@
 package proxy
 
 import (
+	"breaker/pkg/breaker"
 	"breaker/pkg/netio"
 	"breaker/pkg/protocol"
-	"breaker/pkg/server"
 	"errors"
 	log "github.com/sirupsen/logrus"
 	"net"
@@ -14,10 +14,10 @@ type TcpProxy struct {
 	Name string
 	net.Listener
 	WorkingChan chan net.Conn
-	ctx         server.Context
+	ctx         breaker.Context
 }
 
-func NewTcpProxy(name string, ctx server.Context) *TcpProxy {
+func NewTcpProxy(name string, ctx breaker.Context) *TcpProxy {
 	return &TcpProxy{
 		Name:        name,
 		ctx:         ctx,

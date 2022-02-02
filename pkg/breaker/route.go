@@ -1,4 +1,9 @@
-package server
+package breaker
+
+import (
+	"breaker/pkg/protocol"
+	"reflect"
+)
 
 // HandlerFunc is the function type for handlers.
 type HandlerFunc func(ctx Context)
@@ -17,11 +22,11 @@ type MiddlewareFunc func(next HandlerFunc) HandlerFunc
 type Router struct {
 	// handlerMapper maps message's ID to handler.
 	// Handler will be called around middlewares.
-	handlerMapper map[byte]HandlerFunc
+	handlerMapper map[reflect.Type]HandlerFunc
 
 	// middlewaresMapper maps message's ID to a list of middlewares.
 	// These middlewares will be called before the handler in handlerMapper.
-	middlewaresMapper map[byte][]MiddlewareFunc
+	middlewaresMapper map[reflect.Type][]MiddlewareFunc
 
 	// globalMiddlewares is a list of MiddlewareFunc.
 	// globalMiddlewares will be called before the ones in middlewaresMapper.
@@ -36,7 +41,7 @@ func (r *Router) handleRequest(ctx Context) {
 		return
 	}
 	var handler HandlerFunc
-	methodID := cmd.Type()
+	methodID := reflect.TypeOf(cmd)
 	if v, has := r.handlerMapper[methodID]; has {
 		handler = v
 	}
@@ -81,7 +86,8 @@ func (r *Router) registerMiddleware(middlewares ...MiddlewareFunc) {
 	}
 }
 
-func (r *Router) register(id byte, handler HandlerFunc, middlewares ...MiddlewareFunc) {
+func (r *Router) register(cmd protocol.Command, handler HandlerFunc, middlewares ...MiddlewareFunc) {
+	id := reflect.TypeOf(cmd)
 	if handler != nil {
 		r.handlerMapper[id] = handler
 	}
@@ -98,7 +104,7 @@ func (r *Router) register(id byte, handler HandlerFunc, middlewares ...Middlewar
 
 func NewRouter() *Router {
 	return &Router{
-		handlerMapper:     make(map[byte]HandlerFunc),
-		middlewaresMapper: make(map[byte][]MiddlewareFunc),
+		handlerMapper:     make(map[reflect.Type]HandlerFunc),
+		middlewaresMapper: make(map[reflect.Type][]MiddlewareFunc),
 	}
 }

@@ -1,6 +1,7 @@
-package server
+package breaker
 
 import (
+	"breaker/pkg/protocol"
 	"errors"
 	"fmt"
 	log "github.com/sirupsen/logrus"
@@ -8,7 +9,7 @@ import (
 	"time"
 )
 
-var ErrServerStopped = errors.New("server stopped")
+var ErrServerStopped = errors.New("breaker stopped")
 
 const (
 	tempErrDelay             = time.Millisecond * 5
@@ -65,21 +66,21 @@ func (s *Server) Serve(addr string) error {
 		return err
 	}
 	s.listener = lis
-	log.Infof("start tcp server:" + addr)
+	log.Infof("start tcp breaker:" + addr)
 	return s.acceptLoop()
 }
 
 func (s *Server) acceptLoop() error {
 	for {
 		if s.IsStopped() {
-			log.Tracef("server accept loop stopped")
+			log.Tracef("breaker accept loop stopped")
 			return ErrServerStopped
 		}
 
 		conn, err := s.listener.Accept()
 		if err != nil {
 			if s.IsStopped() {
-				log.Tracef("server accept loop stopped")
+				log.Tracef("breaker accept loop stopped")
 				return ErrServerStopped
 			}
 			if ne, ok := err.(net.Error); ok && ne.Temporary() {
@@ -128,15 +129,15 @@ func (s *Server) handleConn(conn net.Conn) {
 
 	select {
 	case <-session.closed: // wait for session finished.
-	case <-s.stopped: // or the server is stopped.
+	case <-s.stopped: // or the breaker is stopped.
 	}
 
 	if s.OnSessionClose != nil {
 		go s.OnSessionClose(session)
 	}
 }
-func (s *Server) AddRoute(msgID byte, handler HandlerFunc, middlewares ...MiddlewareFunc) {
-	s.router.register(msgID, handler, middlewares...)
+func (s *Server) AddRoute(cmd protocol.Command, handler HandlerFunc, middlewares ...MiddlewareFunc) {
+	s.router.register(cmd, handler, middlewares...)
 }
 
 // Use registers global middlewares to the router.
@@ -149,7 +150,7 @@ func (s *Server) NotFoundHandler(handler HandlerFunc) {
 	s.router.setNotFoundHandler(handler)
 }
 
-// Stop stops server. Closing Listener and all connections.
+// Stop stops breaker. Closing Listener and all connections.
 func (s *Server) Stop() error {
 	close(s.stopped)
 	return s.listener.Close()

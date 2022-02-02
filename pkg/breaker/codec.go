@@ -1,4 +1,4 @@
-package server
+package breaker
 
 // Codec is a generic codec for encoding and decoding data.
 type Codec interface {
@@ -17,7 +17,7 @@ func NewDefaultCodec() *DefaultCodec {
 	return &DefaultCodec{}
 }
 
-func (c * DefaultCodec) Encode(v interface{}) ([]byte, error) {
+func (c *DefaultCodec) Encode(v interface{}) ([]byte, error) {
 	//TODO implement me
 	panic("implement me")
 }
@@ -26,4 +26,3 @@ func (c *DefaultCodec) Decode(data []byte, v interface{}) error {
 	//TODO implement me
 	panic("implement me")
 }
-

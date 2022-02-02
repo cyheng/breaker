@@ -8,6 +8,15 @@ func (n *CloseProxy) Type() byte {
 	return TypeCloseProxy
 }
 
+type CloseProxyResp struct {
+	Resp
+	ProxyName string
+}
+
+func (n *CloseProxyResp) Type() byte {
+	return TypeCloseProxyResp
+}
 func init() {
 	RegisterCommand(&CloseProxy{})
+	RegisterCommand(&CloseProxyResp{})
 }

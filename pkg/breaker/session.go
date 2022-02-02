@@ -1,4 +1,4 @@
-package server
+package breaker
 
 import (
 	"breaker/pkg/protocol"
@@ -71,7 +71,10 @@ func (s *TcpSession) ID() interface{} {
 func (s *TcpSession) SetID(id interface{}) {
 	s.id = id
 }
-
+func (s *TcpSession) SendCmd(cmd protocol.Command) bool {
+	ctx := s.AllocateContext()
+	return ctx.SetResponseMessage(cmd).Send()
+}
 func (s *TcpSession) Send(ctx Context) bool {
 	select {
 	case <-ctx.Done():

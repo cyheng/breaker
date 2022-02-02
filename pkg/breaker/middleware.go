@@ -1,4 +1,4 @@
-package server
+package breaker
 
 import (
 	log "github.com/sirupsen/logrus"
@@ -10,7 +10,7 @@ func RecoverMiddleware() MiddlewareFunc {
 		return func(c Context) {
 			defer func() {
 				if r := recover(); r != nil {
-					log.WithField("sid", c.Session().ID()).Errorf("PANIC | %+v | %s", r, debug.Stack())
+					log.WithField("trace id", c.Session().ID()).Errorf("PANIC | %+v | %s", r, debug.Stack())
 				}
 			}()
 			next(c)

@@ -1,4 +1,4 @@
-package server
+package breaker
 
 import (
 	"breaker/pkg/protocol"
