@@ -91,6 +91,10 @@ func NewPortalService(conf *feature.PortalConfig) *breaker.Server {
 			SessionId: sessid,
 		})
 	})
+	//从客户端中获取Working conn
+	srv.AddRoute(&protocol.ReqWorkCtlResp{}, func(ctx breaker.Context) {
+
+	})
 	srv.AddRoute(&protocol.NewWorkCtl{}, func(ctx breaker.Context) {
 		cmd := ctx.Request().(*protocol.NewWorkCtl)
 		clientWorkConn := ctx.Conn()
@@ -129,7 +133,9 @@ func NewPortalService(conf *feature.PortalConfig) *breaker.Server {
 		hostPort := net.JoinHostPort("0.0.0.0", strconv.Itoa(cmd.RemotePort))
 		pxy := proxy.NewTcpProxy(pxyName, ctx)
 		err := pxy.Serve(hostPort)
-		resp := &protocol.NewProxyResp{}
+		resp := &protocol.NewProxyResp{
+			ProxyName: pxyName,
+		}
 		if err != nil {
 			log.Error("new Proxy error:", err)
 			resp.Error = "new Proxy error:%+v" + err.Error()

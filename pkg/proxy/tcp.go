@@ -63,7 +63,6 @@ func (t *TcpProxy) Serve(addr string) error {
 					userconn.Close()
 					return
 				}
-				log.Infof("get worker connection:[%s]", clientWorkConn.RemoteAddr())
 				netio.StartTunnel(clientWorkConn, userconn)
 			}()
 

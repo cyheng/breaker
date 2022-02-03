@@ -27,7 +27,12 @@ type Context interface {
 
 	// SetRequestMessage sets request message entry directly.
 	SetRequestMessage(cmd protocol.Command) Context
+	// Redirect returns redirect message entry.
+	Redirect() protocol.Command
 
+	// SetRedirectMessage sets redirect message entry directly.
+	// used for router
+	SetRedirectMessage(cmd protocol.Command) Context
 	// Bind decodes request message entry to v.
 	Bind(v interface{}) error
 
@@ -66,10 +71,20 @@ func NewContext() *routeContext {
 type routeContext struct {
 	rawCtx context.Context
 
-	storage   sync.Map
-	session   Session
-	reqEntry  protocol.Command
-	respEntry protocol.Command
+	storage       sync.Map
+	session       Session
+	reqEntry      protocol.Command
+	respEntry     protocol.Command
+	redirectEntry protocol.Command
+}
+
+func (r *routeContext) Redirect() protocol.Command {
+	return r.redirectEntry
+}
+
+func (r *routeContext) SetRedirectMessage(cmd protocol.Command) Context {
+	r.redirectEntry = cmd
+	return r
 }
 
 func (r *routeContext) Deadline() (deadline time.Time, ok bool) {

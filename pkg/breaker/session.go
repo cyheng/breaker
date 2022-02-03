@@ -193,6 +193,11 @@ func (s *TcpSession) writeOutbound(timeout time.Duration, times int) {
 func (s *TcpSession) handleReq(router *Router, entry protocol.Command) {
 	ctx := s.AllocateContext().SetRequestMessage(entry)
 	router.handleRequest(ctx)
+	for ctx.Redirect() != nil {
+		ctx.SetRequestMessage(ctx.Redirect())
+		ctx.SetRedirectMessage(nil)
+		router.handleRequest(ctx)
+	}
 	s.Send(ctx)
 }
 

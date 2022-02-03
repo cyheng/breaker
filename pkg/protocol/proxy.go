@@ -12,6 +12,7 @@ func (n *NewProxy) Type() byte {
 
 type NewProxyResp struct {
 	Resp
+	ProxyName string
 }
 
 func (n *NewProxyResp) Type() byte {

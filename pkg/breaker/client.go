@@ -83,21 +83,21 @@ func (s *Client) IsStopped() bool {
 }
 
 func (s *Client) handleSession() {
-	session := s.Session
+
 	if s.OnSessionCreate != nil {
-		go s.OnSessionCreate(session)
+		go s.OnSessionCreate(s.Session)
 	}
 
-	go session.readInbound(s.router, s.readTimeout)               // start reading message packet from connection.
-	go session.writeOutbound(s.writeTimeout, s.writeAttemptTimes) // start writing message packet to connection.
+	go s.Session.readInbound(s.router, s.readTimeout)               // start reading message packet from connection.
+	go s.Session.writeOutbound(s.writeTimeout, s.writeAttemptTimes) // start writing message packet to connection.
 
 	select {
-	case <-session.closed: // wait for Session finished.
+	case <-s.Session.closed: // wait for Session finished.
 	case <-s.stopped: // or the client is stopped.
 	}
 
 	if s.OnSessionClose != nil {
-		go s.OnSessionClose(session)
+		go s.OnSessionClose(s.Session)
 	}
 }
 func (s *Client) AddRoute(cmd protocol.Command, handler HandlerFunc, middlewares ...MiddlewareFunc) {
@@ -164,6 +164,7 @@ func (s *Client) Start() error {
 	//server:listen remote port(create server proxy)
 	//client:dial local port,client:send worker(3)(create client proxy)
 	//server proxy close
+	//主动发送消息
 	context := s.Session.AllocateContext()
 	context.SetResponseMessage(&protocol.NewProxy{
 		ProxyName:  s.Conf.ProxyName,
@@ -188,12 +189,12 @@ func (s *Client) CreateWorkerConn() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	MasterConn := &MasterConn{Conn: workerConn}
-	err = MasterConn.SendCmdSync(workCmd)
+	masterConn := &MasterConn{Conn: workerConn}
+	err = masterConn.SendCmdSync(workCmd)
 	if err != nil {
 		return nil, err
 	}
-	cmdSync, err := MasterConn.ReadCmdSync()
+	cmdSync, err := masterConn.ReadCmdSync()
 	if err != nil {
 		return nil, err
 	}

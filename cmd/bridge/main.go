@@ -35,7 +35,6 @@ var cmdRoot = &cobra.Command{
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)
-
 		}
 		conf.OnInit()
 		cli := NewBridge(conf)
@@ -67,21 +66,10 @@ func NewBridge(conf *feature.BridgeConfig) *breaker.Client {
 
 	cli.AddRoute(&protocol.NewProxyResp{}, func(ctx breaker.Context) {
 		log.Infof("get message NewProxyResp,session id :[%s]", ctx.Session().ID())
-		workerConn, err := cli.CreateWorkerConn()
-		if err != nil {
-			log.Errorf(err.Error())
-			return
-		}
-		addr := net.JoinHostPort("0.0.0.0", strconv.Itoa(cli.Conf.LocalPort))
-		log.Info("dial local tcp:", addr)
-		local, err := net.Dial("tcp", addr)
-		if err != nil {
-			workerConn.Close()
-			log.Errorf(err.Error())
-			return
-		}
-		go netio.StartTunnel(workerConn, local)
-
+		cmd := ctx.Request().(*protocol.NewProxyResp)
+		ctx.SetRedirectMessage(&protocol.ReqWorkCtl{
+			ProxyName: cmd.ProxyName,
+		})
 	})
 	cli.AddRoute(&protocol.CloseProxyResp{}, func(ctx breaker.Context) {
 
@@ -93,7 +81,7 @@ func NewBridge(conf *feature.BridgeConfig) *breaker.Client {
 			return
 		}
 		addr := net.JoinHostPort("0.0.0.0", strconv.Itoa(cli.Conf.LocalPort))
-		log.Info("dial local tcp:", addr)
+		log.Tracef("dial local tcp:[%s]", addr)
 		local, err := net.Dial("tcp", addr)
 		if err != nil {
 			workerConn.Close()
@@ -102,9 +90,7 @@ func NewBridge(conf *feature.BridgeConfig) *breaker.Client {
 		}
 		go netio.StartTunnel(workerConn, local)
 	})
-	cli.AddRoute(&protocol.ReqWorkCtlResp{}, func(ctx breaker.Context) {
 
-	})
 	cli.AddRoute(&protocol.NewWorkCtlResp{}, func(ctx breaker.Context) {
 
 	})
