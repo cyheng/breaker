@@ -5,18 +5,25 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "frpc",
+            "name": "bridge",
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${workspaceFolder}/cmd/frpc"
+            "program": "${workspaceFolder}/cmd/bridge",
+            "args": [
+                "-c",
+                "${workspaceFolder}/conf/bridge.ini"
+            ]
         },
         {
-            "name": "frps",
+            "name": "portal",
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${workspaceFolder}/cmd/frps"
+            "program": "${workspaceFolder}/cmd/portal",
+            "args": [
+                "-c","${workspaceFolder}/conf/portal.ini"
+            ]
         }
     ]
 }
