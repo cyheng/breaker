@@ -18,7 +18,3 @@ type NewProxyResp struct {
 func (n *NewProxyResp) Type() byte {
 	return TypeNewProxyResp
 }
-func init() {
-	RegisterCommand(&NewProxy{})
-	RegisterCommand(&NewProxyResp{})
-}

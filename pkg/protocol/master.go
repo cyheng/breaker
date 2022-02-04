@@ -15,7 +15,3 @@ type NewMasterResp struct {
 func (n *NewMasterResp) Type() byte {
 	return TypeNewMasterResp
 }
-func init() {
-	RegisterCommand(&NewMaster{})
-	RegisterCommand(&NewMasterResp{})
-}
