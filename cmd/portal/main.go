@@ -7,13 +7,14 @@ import (
 	"breaker/pkg/proxy"
 	"breaker/portal"
 	"fmt"
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 	"net"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
+
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 )
 
 const (
@@ -51,7 +52,7 @@ var cmdRoot = &cobra.Command{
 			signal.Notify(osSignals, os.Interrupt, os.Kill, syscall.SIGTERM)
 			<-osSignals
 			if err := srv.Stop(); err != nil {
-				log.Errorf("breaker stopped err: %s", err)
+				log.Errorf("portal  stopped err: %s", err)
 			}
 		}
 	},
@@ -90,6 +91,10 @@ func NewPortalService(conf *feature.PortalConfig) *breaker.Server {
 		ctx.SetResponseMessage(&protocol.NewMasterResp{
 			SessionId: sessid,
 		})
+	})
+	srv.AddRoute(&protocol.Ping{}, func(ctx breaker.Context) {
+		log.Info("get ping from client")
+		ctx.SetResponseMessage(&protocol.Pong{})
 	})
 	//从客户端中获取Working conn
 	srv.AddRoute(&protocol.ReqWorkCtlResp{}, func(ctx breaker.Context) {

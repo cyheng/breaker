@@ -5,9 +5,10 @@ import (
 	"breaker/pkg/protocol"
 	"errors"
 	"fmt"
-	log "github.com/sirupsen/logrus"
 	"net"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 var ErrClientStopped = errors.New("client stopped")
@@ -172,9 +173,17 @@ func (s *Client) Start() error {
 		TraceId:    s.Session.id.(string),
 	})
 	s.Session.Send(context)
-	//todo: heartbeat,check server available
-	select {}
-	return nil
+	heartbeat := time.NewTicker(time.Duration(s.Conf.HeartbeatInterval) * time.Second)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case <-heartbeat.C:
+			context.SetResponseMessage(&protocol.Ping{})
+			s.Session.Send(context)
+		default:
+		}
+
+	}
 }
 func (s *Client) CreateWorkerConn() (net.Conn, error) {
 	//send worker

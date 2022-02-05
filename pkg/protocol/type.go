@@ -11,4 +11,6 @@ const (
 	TypeNewWorkCtlResp = '8'
 	TypeNewMasterResp  = '9'
 	TypeReqWorkCtlResp = '0'
+	TypePing           = 'a'
+	TypePong           = 'b'
 )

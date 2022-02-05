@@ -26,29 +26,11 @@ client会建立两个连接login(用户发送control)和ReqWorkConn(用于转发
 login-> dial server(能不能省略这步？)
 ReqWorkConn-> dial server
 
-## read
-1. ReqWorkConn
-2. NewProxyResponse
-3. Pong(定时)
+## 断线重连
 
-### on userconnect
-4. ReqWorkConn
+frpc是通过keepControllerWorking 来保持断线重连
 
-## write
-1. newMaster
-2. Ping(定时)
-   ###on userconnect
-不做任何操作
- 
+##  hot reload 配置文件,reload 指令
 
-### server 流程:
-## read
-1. newMaster
-### on userconnect
-不做任何操作
 
-## write
-1. ReqWorkConn
-2. NewProxyResponse
-### on userconnect
-1. ReqWorkConn
+##  配置校验指令,check 指令
