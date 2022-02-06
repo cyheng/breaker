@@ -8,6 +8,7 @@ func (n *Ping) Type() byte {
 }
 
 type Pong struct {
+	Resp
 }
 
 func (n *Pong) Type() byte {

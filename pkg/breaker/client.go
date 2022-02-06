@@ -162,9 +162,6 @@ func (s *Client) Start() error {
 	if err != nil {
 		return err
 	}
-	//server:listen remote port(create server proxy)
-	//client:dial local port,client:send worker(3)(create client proxy)
-	//server proxy close
 	//主动发送消息
 	context := s.Session.AllocateContext()
 	context.SetResponseMessage(&protocol.NewProxy{
@@ -180,7 +177,8 @@ func (s *Client) Start() error {
 		case <-heartbeat.C:
 			context.SetResponseMessage(&protocol.Ping{})
 			s.Session.Send(context)
-		default:
+		case <-s.stopped:
+			return nil
 		}
 
 	}

@@ -14,3 +14,18 @@ const (
 	TypePing           = 'a'
 	TypePong           = 'b'
 )
+
+func init() {
+	RegisterCommand(&CloseProxy{})
+	RegisterCommand(&CloseProxyResp{})
+	RegisterCommand(&NewMaster{})
+	RegisterCommand(&NewMasterResp{})
+	RegisterCommand(&NewProxy{})
+	RegisterCommand(&NewProxyResp{})
+	RegisterCommand(&NewWorkCtl{})
+	RegisterCommand(&ReqWorkCtl{})
+	RegisterCommand(&ReqWorkCtlResp{})
+	RegisterCommand(&NewWorkCtlResp{})
+	RegisterCommand(&Ping{})
+	RegisterCommand(&Pong{})
+}

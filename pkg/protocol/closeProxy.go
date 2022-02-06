@@ -16,7 +16,3 @@ type CloseProxyResp struct {
 func (n *CloseProxyResp) Type() byte {
 	return TypeCloseProxyResp
 }
-func init() {
-	RegisterCommand(&CloseProxy{})
-	RegisterCommand(&CloseProxyResp{})
-}

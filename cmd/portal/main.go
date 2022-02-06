@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -70,6 +71,8 @@ func NewPortalService(conf *feature.PortalConfig) *breaker.Server {
 	pm := &proxy.ProxyManager{
 		RunningProxy: make(map[string]*proxy.TcpProxy),
 	}
+
+	go masterManager.CheckConn()
 	srv.OnSessionClose = func(sess breaker.Session) {
 		sessid := sess.ID().(string)
 		err := masterManager.DeleteMaster(sessid)
@@ -93,8 +96,14 @@ func NewPortalService(conf *feature.PortalConfig) *breaker.Server {
 		})
 	})
 	srv.AddRoute(&protocol.Ping{}, func(ctx breaker.Context) {
-		log.Info("get ping from client")
-		ctx.SetResponseMessage(&protocol.Pong{})
+		sessid := ctx.Session().ID().(string)
+		master, ok := masterManager.GetMaster(sessid)
+		resp := &protocol.Pong{}
+		if !ok {
+			resp.Error = "invalid ping with session id:" + sessid
+		}
+		master.LastPingTime = time.Now()
+		ctx.SetResponseMessage(resp)
 	})
 	//从客户端中获取Working conn
 	srv.AddRoute(&protocol.ReqWorkCtlResp{}, func(ctx breaker.Context) {

@@ -35,9 +35,3 @@ type ReqWorkCtlResp struct {
 func (n *ReqWorkCtlResp) Type() byte {
 	return TypeReqWorkCtlResp
 }
-func init() {
-	RegisterCommand(&NewWorkCtl{})
-	RegisterCommand(&ReqWorkCtl{})
-	RegisterCommand(&ReqWorkCtlResp{})
-	RegisterCommand(&NewWorkCtlResp{})
-}
