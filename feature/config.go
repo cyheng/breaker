@@ -2,13 +2,14 @@ package feature
 
 import (
 	"fmt"
-	log "github.com/sirupsen/logrus"
-	"gopkg.in/natefinch/lumberjack.v2"
 	"io"
 	"os"
 	"path"
 	"runtime"
 	"strconv"
+
+	log "github.com/sirupsen/logrus"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 //Config is base config
@@ -79,10 +80,11 @@ func (l *LoggerConfig) InitLog() {
 
 type BridgeConfig struct {
 	Config
-	ServerAddr string `ini:"server_addr"`
-	LocalPort  int    `ini:"local_port"`
-	RemotePort int    `ini:"remote_port"`
-	ProxyName  string `ini:"proxy_name"`
+	ServerAddr        string `ini:"server_addr"`
+	LocalPort         int    `ini:"local_port"`
+	RemotePort        int    `ini:"remote_port"`
+	ProxyName         string `ini:"proxy_name"`
+	HeartbeatInterval int64  `ini:"heartbeat_interval" `
 }
 
 func (b *BridgeConfig) OnInit() {
@@ -94,7 +96,13 @@ func (b *BridgeConfig) OnInit() {
 		panic("invalid local port[0-65535]")
 	}
 	if b.RemotePort < 0 || b.RemotePort > 65535 {
-		panic("invalid local port[0-65535]")
+		panic("invalid remote port[0-65535]")
+	}
+	if b.HeartbeatInterval < 0 {
+		panic("invalid HeartbeatInterval, can't less than 0")
+	}
+	if b.HeartbeatInterval == 0 {
+		b.HeartbeatInterval = 5
 	}
 	if b.ProxyName == "" {
 		b.ProxyName = b.ServerAddr + "_to_" + strconv.Itoa(b.LocalPort)

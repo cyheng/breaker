@@ -5,9 +5,10 @@ import (
 	"breaker/pkg/protocol"
 	"errors"
 	"fmt"
-	log "github.com/sirupsen/logrus"
 	"net"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 var ErrClientStopped = errors.New("client stopped")
@@ -161,9 +162,6 @@ func (s *Client) Start() error {
 	if err != nil {
 		return err
 	}
-	//server:listen remote port(create server proxy)
-	//client:dial local port,client:send worker(3)(create client proxy)
-	//server proxy close
 	//主动发送消息
 	context := s.Session.AllocateContext()
 	context.SetResponseMessage(&protocol.NewProxy{
@@ -172,9 +170,36 @@ func (s *Client) Start() error {
 		TraceId:    s.Session.id.(string),
 	})
 	s.Session.Send(context)
-	//todo: heartbeat,check server available
-	select {}
-	return nil
+	heartbeat := time.NewTicker(time.Duration(s.Conf.HeartbeatInterval) * time.Second)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case <-heartbeat.C:
+			context.SetResponseMessage(&protocol.Ping{})
+			s.Session.Send(context)
+		case <-s.Session.closed:
+			for {
+				log.Info("try to reconnect....")
+				err := s.Connect()
+				if err != nil {
+					time.Sleep(time.Second * 5)
+					continue
+				}
+				//主动发送消息
+				context := s.Session.AllocateContext()
+				context.SetResponseMessage(&protocol.NewProxy{
+					ProxyName:  s.Conf.ProxyName,
+					RemotePort: s.Conf.RemotePort,
+					TraceId:    s.Session.id.(string),
+				})
+				s.Session.Send(context)
+				break
+			}
+		case <-s.stopped:
+			return nil
+		}
+
+	}
 }
 func (s *Client) CreateWorkerConn() (net.Conn, error) {
 	//send worker

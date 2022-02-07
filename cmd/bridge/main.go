@@ -6,13 +6,14 @@ import (
 	"breaker/pkg/netio"
 	"breaker/pkg/protocol"
 	"fmt"
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 	"net"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
+
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 )
 
 const (
@@ -48,6 +49,9 @@ var cmdRoot = &cobra.Command{
 			osSignals := make(chan os.Signal, 1)
 			signal.Notify(osSignals, os.Interrupt, os.Kill, syscall.SIGTERM)
 			<-osSignals
+			if err := cli.Stop(); err != nil {
+				log.Errorf("bridge stopped err: %s", err)
+			}
 		}
 	},
 }
@@ -72,6 +76,10 @@ func NewBridge(conf *feature.BridgeConfig) *breaker.Client {
 		})
 	})
 	cli.AddRoute(&protocol.CloseProxyResp{}, func(ctx breaker.Context) {
+
+	})
+	cli.AddRoute(&protocol.Pong{}, func(ctx breaker.Context) {
+		log.Info("get pong from server")
 
 	})
 	cli.AddRoute(&protocol.ReqWorkCtl{}, func(ctx breaker.Context) {
