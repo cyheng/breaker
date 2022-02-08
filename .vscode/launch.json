@@ -24,6 +24,18 @@
             "args": [
                 "-c","${workspaceFolder}/conf/portal.ini"
             ]
+        },
+        {
+            "name": "portal_proxy",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/portal",
+            "args": [
+                "proxy",
+                "-c",
+                "${workspaceFolder}/conf/portal.ini"
+            ]
         }
     ]
 }
