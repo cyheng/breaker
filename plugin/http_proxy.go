@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"breaker/pkg/netio"
 	"io"
 	"net"
 	"net/http"
@@ -69,6 +70,5 @@ func (hp *HttpProxy) ConnectHandler(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 	client.Write([]byte("HTTP/1.1 200 OK\r\n\r\n"))
-
-	io.Copy(remote, client)
+	go netio.StartTunnel(remote, client)
 }

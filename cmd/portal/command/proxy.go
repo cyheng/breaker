@@ -35,6 +35,7 @@ var proxyCmd = &cobra.Command{
 		}
 		pxy := &plugin.HttpProxy{}
 		addr := net.JoinHostPort("0.0.0.0", fmt.Sprint(conf.ProxyPort))
+		fmt.Printf("proxy listen at :%v", addr)
 		if err := http.ListenAndServe(addr, pxy); err != nil {
 			fmt.Println(err)
 			os.Exit(1)
