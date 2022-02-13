@@ -12,7 +12,7 @@
 - [ ] TCP 多路复用(减少文件占用符的使用)
 - [x] 配置校验指令,check 指令
 - [x] http_proxy,静态代理(portal设置时，代表用portal所在的服务器进行代理)
-- [ ] static_file ,HTTP 服务查看指定的目录下的文件
+- [x] static_file ,HTTP 服务查看指定的目录下的文件
 - [x] 代码重构，目前不优雅
   * 添加session对象，让working连接添加到master session中
   * 实现middleware

@@ -5,6 +5,7 @@ import (
 	"breaker/pkg/breaker"
 	"breaker/pkg/netio"
 	"breaker/pkg/protocol"
+	"breaker/plugin"
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -73,15 +74,36 @@ func NewBridge(conf *feature.BridgeConfig) *breaker.Client {
 		ctx.SetRedirectMessage(&protocol.ReqWorkCtl{
 			ProxyName: cmd.ProxyName,
 		})
+		if conf.PluginFileServer.FileLocation != "" && cli.FileServer == nil {
+			fileSrv := plugin.NewFileServer(conf.PluginFileServer.FileLocation, conf.PluginFileServer.Prefix)
+			cli.FileServer = fileSrv
+			go cli.FileServer.Run()
+		}
 	})
 	cli.AddRoute(&protocol.CloseProxyResp{}, func(ctx breaker.Context) {
-
+		if cli.FileServer != nil {
+			cli.FileServer.Close()
+			cli.FileServer = nil
+		}
 	})
 	cli.AddRoute(&protocol.Pong{}, func(ctx breaker.Context) {
 		log.Info("get pong from server")
 
 	})
 	cli.AddRoute(&protocol.ReqWorkCtl{}, func(ctx breaker.Context) {
+		if cli.FileServer != nil {
+			workerConn, err := cli.CreateWorkerConn()
+			if err != nil {
+				log.Errorf(err.Error())
+				return
+			}
+			err = cli.FileServer.HandlerConn(workerConn, nil)
+			if err != nil {
+				log.Errorf(err.Error())
+				return
+			}
+			return
+		}
 		addr := net.JoinHostPort("0.0.0.0", strconv.Itoa(cli.Conf.LocalPort))
 		log.Tracef("dial local tcp:[%s]", addr)
 		local, err := net.Dial("tcp", addr)

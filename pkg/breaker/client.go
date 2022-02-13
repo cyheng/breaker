@@ -3,6 +3,7 @@ package breaker
 import (
 	"breaker/feature"
 	"breaker/pkg/protocol"
+	"breaker/plugin"
 	"errors"
 	"fmt"
 	"net"
@@ -36,6 +37,7 @@ type Client struct {
 	stopped               chan struct{}
 	writeAttemptTimes     int
 	Session               *TcpSession
+	FileServer            *plugin.FileServer
 }
 
 func NewClient(opts ...ClientOption) *Client {

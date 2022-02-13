@@ -4,6 +4,7 @@ import "strconv"
 
 type BridgeConfig struct {
 	LoggerConfig      `ini:"Logger"`
+	PluginFileServer  `ini:"plugin_file_server"`
 	ServerAddr        string `ini:"server_addr"`
 	LocalPort         int    `ini:"local_port"`
 	RemotePort        int    `ini:"remote_port"`
@@ -13,6 +14,7 @@ type BridgeConfig struct {
 
 func (b *BridgeConfig) OnInit() {
 	b.LoggerConfig.OnInit()
+	b.PluginFileServer.OnInit()
 	if b.ServerAddr == "" {
 		panic("breaker address can not be empty")
 	}
