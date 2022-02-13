@@ -83,6 +83,10 @@ func (t *TcpProxy) GetWorkConn() (net.Conn, error) {
 			t.ctx.Send()
 			return workConn, nil
 		case <-time.After(time.Duration(5) * time.Second):
+			t.ctx.SetResponseMessage(&protocol.ReqWorkCtl{
+				ProxyName: t.Name,
+			})
+			t.ctx.Send()
 			return nil, errors.New("timeout trying to get work connection")
 		}
 	}

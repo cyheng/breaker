@@ -82,16 +82,16 @@ func NewBridge(conf *feature.BridgeConfig) *breaker.Client {
 
 	})
 	cli.AddRoute(&protocol.ReqWorkCtl{}, func(ctx breaker.Context) {
-		workerConn, err := cli.CreateWorkerConn()
-		if err != nil {
-			log.Errorf(err.Error())
-			return
-		}
 		addr := net.JoinHostPort("0.0.0.0", strconv.Itoa(cli.Conf.LocalPort))
 		log.Tracef("dial local tcp:[%s]", addr)
 		local, err := net.Dial("tcp", addr)
 		if err != nil {
-			workerConn.Close()
+			log.Errorf(err.Error())
+			return
+		}
+		workerConn, err := cli.CreateWorkerConn()
+		if err != nil {
+			local.Close()
 			log.Errorf(err.Error())
 			return
 		}
